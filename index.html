@@ -129,7 +129,7 @@ function LoginScreen({onLogin, adminPw, members}) {
   const [pw,setPw]     = useState("");
   const [err,setErr]   = useState("");
   const tryAdmin = () => {
-  const savedPw = (window._adminPw || adminPw || "admin1234");
+  const savedPw = (window._adminPw || adminPw || "981105");
   if(pw === savedPw) onLogin({role:"admin",name:"관리자"});
   else setErr("비밀번호가 틀렸습니다.");
 };
