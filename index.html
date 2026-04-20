@@ -15,6 +15,7 @@
       appId: "26e9e8f3-42a8-4553-b8ef-0a84714db091",
       notifyButton: { enable: false },
       allowLocalhostAsSecureOrigin: true,
+      serviceWorkerParam: { scope: "/ston/" },
     });
   });
 </script>
@@ -1077,7 +1078,10 @@ function Chat({user,members}) {
         contents: { ko: body,  en: body  },
         url: window.location.href,
       })
-    }).catch(()=>{}); // 실패해도 채팅은 계속 동작
+    })
+    .then(r=>r.json())
+    .then(d=>{ if(d.errors) console.warn("OneSignal 오류:", JSON.stringify(d.errors)); else console.log("✅ 알림 전송:", d.id); })
+    .catch(e=>console.warn("알림 전송 실패:", e));
   };
 
   const send=()=>{
