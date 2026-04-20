@@ -9,6 +9,12 @@
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js"></script>
 <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
 <script>
+  // 서비스워커 수동 등록 (GitHub Pages 하위 경로 대응)
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.register('/ston/OneSignalSDKWorker.js', {scope:'/ston/'})
+      .then(r=>console.log('✅ SW 등록 성공:', r.scope))
+      .catch(e=>console.warn('SW 등록 실패:', e));
+  }
   window.OneSignalDeferred = window.OneSignalDeferred || [];
   OneSignalDeferred.push(async function(OneSignal) {
     await OneSignal.init({
