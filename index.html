@@ -1088,9 +1088,9 @@ function Chat({user,members}) {
             body:last.imgUrl?"📷 사진을 보냈어요":last.text,
             icon:"https://em-content.zobj.net/source/apple/391/school_1f3eb.png",
             badge:"https://em-content.zobj.net/source/apple/391/school_1f3eb.png",
-            tag:r,
-            renotify:true,
-            data:{room:r}
+            tag:`${r}_${last.id}`, // 메시지별 고유 tag (중복 대체 방지)
+            data:{room:r},
+            vibrate:[200,100,200]
           };
           // 서비스워커 우선 사용 (모바일 필수), 실패 시 일반 Notification으로 폴백
           if('serviceWorker' in navigator && navigator.serviceWorker.ready){
