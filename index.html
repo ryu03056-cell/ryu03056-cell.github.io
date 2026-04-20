@@ -7,7 +7,6 @@
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js"></script>
-<script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
 <script>
   // 서비스워커 수동 등록 (GitHub Pages 하위 경로 대응)
   if('serviceWorker' in navigator){
@@ -15,16 +14,6 @@
       .then(r=>console.log('✅ SW 등록 성공:', r.scope))
       .catch(e=>console.warn('SW 등록 실패:', e));
   }
-  window.OneSignalDeferred = window.OneSignalDeferred || [];
-  OneSignalDeferred.push(async function(OneSignal) {
-    await OneSignal.init({
-      appId: "26e9e8f3-42a8-4553-b8ef-0a84714db091",
-      notifyButton: { enable: false },
-      allowLocalhostAsSecureOrigin: true,
-      path: "/ston/",
-      serviceWorkerParam: { scope: "/ston/" },
-    });
-  });
 </script>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -1594,6 +1583,24 @@ function App() {
 }
 
 ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+
+<!-- OneSignal: React 렌더링 완료 후 로드 -->
+<script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" async></script>
+<script>
+  window.OneSignalDeferred = window.OneSignalDeferred || [];
+  window.addEventListener('load', function() {
+    OneSignalDeferred.push(async function(OneSignal) {
+      await OneSignal.init({
+        appId: "26e9e8f3-42a8-4553-b8ef-0a84714db091",
+        notifyButton: { enable: false },
+        allowLocalhostAsSecureOrigin: true,
+        path: "/ston/",
+        serviceWorkerParam: { scope: "/ston/" },
+      });
+      console.log('✅ OneSignal 초기화 완료');
+    });
+  });
 </script>
 </body>
 </html>
