@@ -4,6 +4,11 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>현장조사팀 대시보드</title>
+<link rel="manifest" href="/manifest.json"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="현장조사팀"/>
+<meta name="theme-color" content="#0f172a"/>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js"></script>
@@ -1090,10 +1095,11 @@ function Chat({user,members}) {
     };
     xhr.send(JSON.stringify({
       app_id: OS_APP_ID,
-      included_segments: ["All"],
+      included_segments: ["Total Subscriptions", "All"],
       headings: { ko: title, en: title },
       contents: { ko: body, en: body },
       url: window.location.href,
+      target_channel: "push",
     }));
   };
 
