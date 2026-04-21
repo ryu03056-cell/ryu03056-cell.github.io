@@ -94,15 +94,29 @@ const parseExcelDate = val => {
 
 /* ── Firebase 쓰기 ── */
 const fbRows = rows => {
-  const o={};
-  rows.forEach(r=>{
-    // undefined 값은 Firebase에 저장 안 되므로 명시적으로 기본값 설정
-    o[r.id]={
-      ...r,
-      연면적: parseFloat(r.연면적)||0,
-      동수: parseInt(r.동수)||0,
-      progress: r.progress||0,
-      계약금액: parseInt(r.계약금액)||0,
+  const o = {};
+  rows.forEach(r => {
+    // 모든 필드를 명시적으로 기본값과 함께 저장 (undefined 방지)
+    o[r.id] = {
+      id:         r.id        || "",
+      no:         r.no        || 0,
+      점검종류:   r.점검종류  || "",
+      지역:       r.지역      || "",
+      학교명:     r.학교명    || "",
+      시설명:     r.시설명    || "",
+      동수:       parseInt(r.동수)       || 0,
+      연면적:     parseFloat(r.연면적)   || 0,
+      현장조사:   r.현장조사  || "",
+      착수일:     r.착수일    || "",
+      완수일:     r.완수일    || "",
+      납품일:     r.납품일    || "",
+      FMS:        r.FMS       || "",
+      특기사항:   r.특기사항  || "",
+      납품방법:   r.납품방법  || "현장납품",
+      lead:       r.lead      || "",
+      progress:   r.progress  || 0,
+      status:     r.status    || "예정",
+      계약금액:   parseInt(r.계약금액)   || 0,
     };
   });
   db.ref("rows").set(o);
@@ -1802,7 +1816,27 @@ function App() {
       if(data){
         const loaded=Object.values(data)
           .sort((a,b)=>(a.no||0)-(b.no||0))
-          .map(r=>({...r, 연면적:parseFloat(r.연면적)||0, 동수:parseInt(r.동수)||0}));
+          .map(r=>({
+            id:         r.id        || "",
+            no:         r.no        || 0,
+            점검종류:   r.점검종류  || "",
+            지역:       r.지역      || "",
+            학교명:     r.학교명    || "",
+            시설명:     r.시설명    || "",
+            동수:       parseInt(r.동수)     || 0,
+            연면적:     parseFloat(r.연면적) || 0,
+            현장조사:   r.현장조사  || "",
+            착수일:     r.착수일    || "",
+            완수일:     r.완수일    || "",
+            납품일:     r.납품일    || "",
+            FMS:        r.FMS       || "",
+            특기사항:   r.특기사항  || "",
+            납품방법:   r.납품방법  || "현장납품",
+            lead:       r.lead      || "",
+            progress:   r.progress  || 0,
+            status:     r.status    || "예정",
+            계약금액:   parseInt(r.계약금액) || 0,
+          }));
         setRows(loaded);
       }
       else setRows([]);
