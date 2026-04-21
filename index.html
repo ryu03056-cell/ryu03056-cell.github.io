@@ -12,6 +12,7 @@
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-messaging.js"></script>
 <script>
   // 서비스워커 등록 (모바일 알림 지원)
   if('serviceWorker' in navigator){
@@ -53,6 +54,55 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 const storage = firebase.storage();
+
+// FCM 초기화 (서비스워커 지원 환경에서만)
+const VAPID_KEY = "BNDfK2ZTTQkSESXVdBSegDcFgOvQyUtAbG9PmHKBTPF5yOxFwC9GIvqc5oA1M_4naSavx_nNnWK3d93jNPJ8Ylw";
+const VERCEL_NOTIFY = "https://ryu03056-cell-github-io.vercel.app/api/notify-fcm";
+
+// FCM 토큰을 Firebase에 저장 (사용자별)
+async function registerFCMToken(userName) {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return null;
+  if (typeof firebase.messaging !== 'function') return null;
+  try {
+    const sw = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+    await navigator.serviceWorker.ready;
+    const messaging = firebase.messaging();
+    messaging.useServiceWorker(sw);
+    const token = await messaging.getToken({ vapidKey: VAPID_KEY });
+    if (token && userName) {
+      await db.ref(`fcmTokens/${encodeURIComponent(userName)}`).set({
+        token, updatedAt: Date.now(), userAgent: navigator.userAgent.substring(0, 100)
+      });
+      console.log('✅ FCM 토큰 등록:', token.substring(0, 20) + '...');
+    }
+    return token;
+  } catch(e) {
+    console.warn('FCM 토큰 등록 실패:', e.message);
+    return null;
+  }
+}
+
+// 모든 등록된 토큰으로 푸시 알림 전송
+async function sendFCMNotif(title, body, room, senderName) {
+  try {
+    const snap = await db.ref('fcmTokens').once('value');
+    const data = snap.val();
+    if (!data) return;
+    // 보낸 사람 제외한 토큰 수집
+    const tokens = Object.entries(data)
+      .filter(([name]) => decodeURIComponent(name) !== senderName)
+      .map(([, v]) => v.token)
+      .filter(Boolean);
+    if (tokens.length === 0) return;
+    await fetch(VERCEL_NOTIFY, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, body, tokens, room })
+    });
+  } catch(e) {
+    console.warn('FCM 알림 전송 실패:', e.message);
+  }
+}
 </script>
 
 <script type="text/babel">
@@ -1282,86 +1332,73 @@ function Chat({user,members}) {
     return()=>window.removeEventListener("resize",h);
   },[]);
 
-  // 페이지 로드 시 알림 권한 상태 확인
+  // 페이지 로드 시 알림 권한 상태 확인 + FCM 토큰 자동 갱신
   useEffect(()=>{
     if(typeof Notification!=="undefined"){
       setNotifPerm(Notification.permission);
-      setSubscribed(Notification.permission==="granted");
+      if(Notification.permission==="granted"){
+        setSubscribed(true);
+        // 이미 허용된 경우 FCM 토큰 자동 등록
+        if(user?.name) registerFCMToken(user.name);
+      }
     }
-  },[]);
+  },[user]);
 
-  // 알림 권한 요청 + 진단
+  // 알림 권한 요청 + FCM 토큰 등록
   const reqNotif=()=>{
     const ua=navigator.userAgent;
     const isIOS=/iPad|iPhone|iPod/.test(ua)&&!window.MSStream;
     const isAndroid=/Android/.test(ua);
     const isSafari=/Safari/.test(ua)&&!/Chrome|CriOS|FxiOS/.test(ua);
-    const isChrome=/Chrome|CriOS/.test(ua);
     const standalone=window.matchMedia('(display-mode: standalone)').matches||window.navigator.standalone===true;
 
-    // 1) 아이폰 + 크롬 (FireFox 등) → 절대 불가
     if(isIOS&&!isSafari){
-      alert("⚠️ 아이폰에서는 반드시 Safari로 접속해주세요.\n\nChrome/Firefox 같은 다른 브라우저는 아이폰에서 알림을 지원하지 않아요.\n\n1. Safari 열기\n2. 이 사이트 주소 붙여넣기\n3. 공유 버튼 → 홈 화면에 추가\n4. 홈 화면 아이콘으로 열기\n5. 그 안에서 🔔 버튼 누르기");
+      alert("⚠️ 아이폰에서는 반드시 Safari로 접속해주세요.\n\n1. Safari 열기\n2. 이 사이트 주소 붙여넣기\n3. 공유 버튼 → 홈 화면에 추가\n4. 홈 화면 아이콘으로 열기\n5. 그 안에서 🔔 버튼 누르기");
       return;
     }
-
-    // 2) 아이폰 Safari이지만 홈 화면 추가 안 함
     if(isIOS&&isSafari&&!standalone){
-      alert("📱 아이폰은 반드시 홈 화면에 추가해서 써야 알림이 와요.\n\n1. 하단 공유 버튼(□↑) 탭\n2. '홈 화면에 추가' 탭\n3. 추가된 아이콘으로 열기\n4. 열린 창에서 다시 🔔 버튼 누르기");
+      alert("📱 아이폰은 홈 화면에 추가해서 앱 아이콘으로 열어야 알림이 와요.\n\n1. 하단 공유 버튼(□↑) 탭\n2. '홈 화면에 추가' 탭\n3. 추가된 아이콘으로 열기\n4. 다시 🔔 버튼 누르기");
       return;
     }
-
-    // 3) 브라우저 알림 미지원
     if(typeof Notification==="undefined"){
-      alert("❌ 이 브라우저는 알림을 지원하지 않아요.\n\n기기: "+ua.substring(0,80));
+      alert("❌ 이 브라우저는 알림을 지원하지 않아요.");
       return;
     }
 
-    // 4) 알림 표시 함수 (SW 우선, 실패 시 Notification API)
-    const showTestNotif=(title,body)=>{
-      const options={
-        body,
-        icon:"https://em-content.zobj.net/source/apple/391/school_1f3eb.png",
-        badge:"https://em-content.zobj.net/source/apple/391/school_1f3eb.png",
-        tag:"test_"+Date.now(),
-        vibrate:[200,100,200]
-      };
-      let used="";
-      if('serviceWorker' in navigator){
-        navigator.serviceWorker.ready.then(reg=>{
-          used="SW";
-          return reg.showNotification(title,options);
-        }).catch(e=>{
-          console.warn("SW 알림 실패, 폴백:",e);
-          try{new Notification(title,options);used="Notification";}catch(err){console.warn(err);}
-        });
-      }else{
-        try{new Notification(title,options);used="Notification";}catch(err){console.warn(err);}
+    const doRegister = async (perm) => {
+      if(perm !== "granted") return;
+      setSubscribed(true);
+      setNotifPerm("granted");
+      // FCM 토큰 등록
+      const token = await registerFCMToken(user?.name);
+      const env = isIOS?"아이폰 Safari":isAndroid?"안드로이드":"컴퓨터";
+      if(token){
+        // 테스트 알림
+        if('serviceWorker' in navigator){
+          const sw = await navigator.serviceWorker.ready;
+          sw.showNotification("🔔 알림 등록 완료", {
+            body:`${env}에서 알림이 설정됐어요. 이제 메시지가 오면 알림이 와요!`,
+            icon:"https://em-content.zobj.net/source/apple/391/school_1f3eb.png",
+            tag:"fcm_test_"+Date.now()
+          });
+        }
+      } else {
+        alert("✅ 브라우저 알림은 허용됐어요.\nFCM 등록은 실패했지만 탭이 열려있을 때 알림은 와요.");
       }
     };
 
-    // 5) 권한별 분기
     if(Notification.permission==="granted"){
-      showTestNotif("✅ 알림 테스트","알림이 보이면 정상이에요!");
-      const env=isIOS?"아이폰 Safari (홈화면 추가됨)":isAndroid?"안드로이드":"컴퓨터";
-      alert("✅ 알림 권한은 허용돼 있어요.\n환경: "+env+"\n\n방금 테스트 알림을 보냈어요.\n👉 알림이 안 보이면:\n- 폰 '설정 > 알림'에서 이 앱 알림을 허용했는지 확인\n- 방해 금지 모드 꺼져 있는지 확인");
-      setSubscribed(true);
+      doRegister("granted");
       return;
     }
     if(Notification.permission==="denied"){
-      alert("❌ 알림이 차단돼 있어요.\n\n브라우저 설정에서 이 사이트의 알림을 '허용'으로 바꿔주세요.\n\n("+(isIOS?"아이폰: 설정 > Safari > 알림":isAndroid?"안드로이드: 사이트 설정 > 알림":"브라우저: 주소창 왼쪽 🔒 > 알림")+")");
+      alert("❌ 알림이 차단돼 있어요.\n브라우저 설정에서 이 사이트의 알림을 '허용'으로 바꿔주세요.");
       return;
     }
-
-    // 6) 권한 요청
     Notification.requestPermission().then(p=>{
       setNotifPerm(p);
-      if(p==="granted"){
-        setSubscribed(true);
-        showTestNotif("🔔 알림이 켜졌어요","이제 새 메시지가 오면 알려드릴게요.");
-      }else{
-        alert("알림이 허용되지 않았어요.");
-      }
+      if(p==="granted") doRegister(p);
+      else alert("알림이 허용되지 않았어요.");
     });
   };
 
@@ -1455,6 +1492,7 @@ function Chat({user,members}) {
     if(!input.trim())return;
     const msg={id:Date.now(),sender:user.name,text:input.trim(),room,time:new Date().toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"}),date:new Date().toLocaleDateString("ko-KR",{month:"long",day:"numeric"})};
     db.ref(`chat/${room}/${msg.id}`).set(msg);
+    sendFCMNotif(`[${room}] ${user.name}`, input.trim(), room, user.name);
     setInput("");
   };
 
@@ -1469,6 +1507,7 @@ function Chat({user,members}) {
       const url=await ref.getDownloadURL();
       const msg={id:Date.now(),sender:user.name,imgUrl:url,text:"",room,time:new Date().toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"}),date:new Date().toLocaleDateString("ko-KR",{month:"long",day:"numeric"})};
       db.ref(`chat/${room}/${msg.id}`).set(msg);
+      sendFCMNotif(`[${room}] ${user.name}`, "📷 사진을 보냈어요", room, user.name);
     }catch(err){alert("업로드 실패: "+err.message);}
     setUploading(false);
     e.target.value="";
