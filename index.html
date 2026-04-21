@@ -15,13 +15,7 @@
 <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-messaging.js"></script>
 <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
   // 서비스워커 등록 (모바일 알림 지원)
-  if('serviceWorker' in navigator){
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('/sw.js')
-        .then(r=>console.log('✅ SW 등록:', r.scope))
-        .catch(e=>console.warn('SW 실패:', e));
-    });
-  }
+ // OneSignal이 서비스워커 자동 관리
 </script>
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -1351,7 +1345,7 @@ function Chat({user,members}) {
       if(Notification.permission==="granted"){
         setSubscribed(true);
         // 이미 허용된 경우 FCM 토큰 자동 등록
-        if(user?.name) registerFCMToken(user.name);
+        if(user?.name) registerOneSignal(user.name);
       }
     }
   },[user]);
@@ -1382,7 +1376,7 @@ function Chat({user,members}) {
       setSubscribed(true);
       setNotifPerm("granted");
       // FCM 토큰 등록
-      const token = await registerFCMToken(user?.name);
+      const token = await registerOneSignal(user?.name);
       const env = isIOS?"아이폰 Safari":isAndroid?"안드로이드":"컴퓨터";
       if(token){
         // 테스트 알림
@@ -1504,7 +1498,7 @@ function Chat({user,members}) {
     if(!input.trim())return;
     const msg={id:Date.now(),sender:user.name,text:input.trim(),room,time:new Date().toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"}),date:new Date().toLocaleDateString("ko-KR",{month:"long",day:"numeric"})};
     db.ref(`chat/${room}/${msg.id}`).set(msg);
-    sendFCMNotif(`[${room}] ${user.name}`, input.trim(), room, user.name);
+    sendOneSignalNotif(`[${room}] ${user.name}`, input.trim(), room, user.name);
     setInput("");
   };
 
@@ -1519,7 +1513,7 @@ function Chat({user,members}) {
       const url=await ref.getDownloadURL();
       const msg={id:Date.now(),sender:user.name,imgUrl:url,text:"",room,time:new Date().toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit"}),date:new Date().toLocaleDateString("ko-KR",{month:"long",day:"numeric"})};
       db.ref(`chat/${room}/${msg.id}`).set(msg);
-      sendFCMNotif(`[${room}] ${user.name}`, "📷 사진을 보냈어요", room, user.name);
+      sendOneSignalNotif(`[${room}] ${user.name}`, "📷 사진을 보냈어요", room, user.name);
     }catch(err){alert("업로드 실패: "+err.message);}
     setUploading(false);
     e.target.value="";
