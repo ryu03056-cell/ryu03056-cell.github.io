@@ -287,7 +287,9 @@ function SiteManager({rows,setRows,members,isAdmin}) {
   const [viewMode, setViewMode]=useState("progress");
   const [addOpen, setAddOpen]=useState(false);
   const [addF,    setAddF]   =useState({});
-  const [toast,   setToast]  =useState(null); // {msg, type}
+  const [toast,   setToast]  =useState(null);
+  const [expPeriod,setExpPeriod]=useState(new Set()); // 반기 그룹 펼침 상태
+  const [expSch,setExpSch]=useState(new Set());       // 학교 펼침 상태
   const toastTimer=useRef(null);
 
   const showToast=(msg,type="success")=>{
@@ -296,6 +298,7 @@ function SiteManager({rows,setRows,members,isAdmin}) {
     toastTimer.current=setTimeout(()=>setToast(null),2800);
   };
 
+  const CURRENT_YEAR = new Date().getFullYear();
   const fCols=["점검종류","지역","학교명"];
   const uniq=col=>[...new Set(rows.map(r=>r[col]).filter(Boolean))].sort();
   const isFilt=col=>colF[col]&&colF[col].size>0;
@@ -303,6 +306,47 @@ function SiteManager({rows,setRows,members,isAdmin}) {
   const clrCol=col=>setColF(p=>({...p,[col]:new Set()}));
 
   const update=updated=>{setRows(updated);fbRows(updated);};
+
+  // 🆕 신규 학교 판단: 해당 학교의 가장 오래된 착수일 연도가 CURRENT_YEAR이면 신규
+  const schoolFirstYear = (()=>{
+    const map={};
+    rows.forEach(r=>{
+      const name=r.학교명;
+      if(!name)return;
+      // 착수일 > 현장조사 > 완수일 순으로 연도 추출
+      const dateStr=r.착수일||r.현장조사||r.완수일;
+      if(!dateStr)return;
+      const y=parseInt(dateStr.substring(0,4));
+      if(!y||y<2000)return;
+      if(!map[name]||y<map[name])map[name]=y;
+    });
+    return map;
+  })();
+  const isNewSchool = name => schoolFirstYear[name]===CURRENT_YEAR;
+
+  // 📅 반기 키 생성: "2026-H2" 형태
+  const periodKey = (r) => {
+    const dateStr = r.착수일 || r.현장조사 || r.완수일;
+    if(!dateStr) return null;
+    const y = parseInt(dateStr.substring(0,4));
+    const m = parseInt(dateStr.substring(5,7));
+    if(!y||!m) return null;
+    const half = m<=6 ? "H1" : "H2";
+    return `${y}-${half}`;
+  };
+  const periodLabel = key => {
+    if(!key) return "⚠️ 날짜 미정";
+    const [y,h] = key.split("-");
+    return `${y.substring(2)}년 ${h==="H1"?"상반기":"하반기"}`;
+  };
+  // 내림차순 정렬 (최신이 위로)
+  const sortPeriodKeys = (keys) => {
+    return keys.sort((a,b)=>{
+      if(a===null||a==="unknown") return 1;
+      if(b===null||b==="unknown") return -1;
+      return b.localeCompare(a);
+    });
+  };
 
   /* 행 삭제 */
   const deleteRow=id=>{
@@ -352,18 +396,55 @@ function SiteManager({rows,setRows,members,isAdmin}) {
     showToast(`✅ ${newRow.학교명} 추가됐습니다`);
   };
 
-  /* 엑셀 파싱 — 업로드 시 기존 데이터 교체 */
+  /* 📤 엑셀 파싱 — 에러 처리 강화 */
   const handleFile=e=>{
-    const file=e.target.files[0]; if(!file)return;
+    const file=e.target.files[0];
+    if(!file){
+      showToast("⚠️ 파일이 선택되지 않았어요","delete");
+      return;
+    }
+
+    // 파일 확장자 체크
+    const ext = file.name.toLowerCase().split('.').pop();
+    if(!["xlsx","xls","csv"].includes(ext)){
+      showToast(`⚠️ 지원하지 않는 형식: .${ext} (xlsx, xls, csv만 가능)`,"delete");
+      e.target.value=""; return;
+    }
+
+    // 파일 크기 체크 (10MB 제한)
+    if(file.size > 10*1024*1024){
+      showToast("⚠️ 파일 크기가 10MB를 초과합니다","delete");
+      e.target.value=""; return;
+    }
+
+    showToast("📤 파일 읽는 중...","success");
+
     const reader=new FileReader();
+    reader.onerror=()=>{
+      showToast("❌ 파일 읽기 실패","delete");
+    };
     reader.onload=ev=>{
       try{
-        const wb=XLSX.read(ev.target.result,{type:"array"});
+        // xlsx 라이브러리 체크
+        if(typeof XLSX === "undefined"){
+          showToast("❌ 엑셀 라이브러리 로드 실패 (새로고침 필요)","delete");
+          return;
+        }
+
+        const wb=XLSX.read(ev.target.result,{type:"array",cellDates:false});
+        if(!wb||!wb.SheetNames||wb.SheetNames.length===0){
+          showToast("❌ 시트를 찾을 수 없어요","delete");
+          return;
+        }
         const ws=wb.Sheets[wb.SheetNames[0]];
-        const data=XLSX.utils.sheet_to_json(ws,{defval:""});
-        // 컬럼명 정규화 함수: 공백/괄호/단위 제거하고 소문자로
+        const data=XLSX.utils.sheet_to_json(ws,{defval:"",raw:false});
+
+        if(!data||data.length===0){
+          showToast("⚠️ 엑셀에 데이터가 없어요","delete");
+          return;
+        }
+
         const norm=s=>String(s||"").toLowerCase().replace(/[\s()㎡m²2]/g,"");
-        // 각 행의 키를 정규화한 맵으로 변환 → 어떤 표기든 매칭
         const findVal=(row,...candidates)=>{
           const keys=Object.keys(row);
           for(const cand of candidates){
@@ -394,10 +475,26 @@ function SiteManager({rows,setRows,members,isAdmin}) {
           계약금액:parseInt(findVal(r,"계약금액"))||0,
           현장참여:[]
         })).filter(r=>r.학교명);
+
+        if(parsed.length===0){
+          showToast("⚠️ 유효한 데이터가 없어요 (학교명 필수)","delete");
+          return;
+        }
+
         setPreview(parsed);
-      }catch(err){alert("파일을 읽을 수 없어요: "+err.message);}
+        showToast(`✅ ${parsed.length}개 행 파싱 완료`);
+      }catch(err){
+        console.error("엑셀 파싱 오류:",err);
+        showToast(`❌ 파일 오류: ${err.message}`,"delete");
+      }
     };
-    reader.readAsArrayBuffer(file); e.target.value="";
+
+    try{
+      reader.readAsArrayBuffer(file);
+    }catch(err){
+      showToast(`❌ 파일 읽기 실패: ${err.message}`,"delete");
+    }
+    e.target.value="";
   };
 
   const filtered=rows.filter(r=>{
@@ -409,19 +506,37 @@ function SiteManager({rows,setRows,members,isAdmin}) {
     return true;
   });
 
-  // 학교별 그룹핑 (아코디언용)
-  const grouped=(()=>{
-    const map={};
+  // 📅 반기별 그룹핑 → 학교별 그룹핑
+  const periodGroups = (()=>{
+    const pMap={};
     filtered.forEach(r=>{
-      const key=r.학교명||"(이름없음)";
-      if(!map[key])map[key]={학교명:key,지역:r.지역||"",rows:[],동수합:0,연면적합:0};
-      map[key].rows.push(r);
-      map[key].동수합+=(parseInt(r.동수)||0);
-      map[key].연면적합+=(parseFloat(r.연면적)||0);
+      const pk = periodKey(r) || "unknown";
+      if(!pMap[pk]) pMap[pk]={key:pk, rows:[]};
+      pMap[pk].rows.push(r);
     });
-    return Object.values(map).sort((a,b)=>a.학교명.localeCompare(b.학교명));
+
+    // 각 반기 안에서 학교별로 묶기
+    const result = sortPeriodKeys(Object.keys(pMap)).map(pk=>{
+      const group=pMap[pk];
+      const schoolMap={};
+      group.rows.forEach(r=>{
+        const key=r.학교명||"(이름없음)";
+        if(!schoolMap[key])schoolMap[key]={학교명:key,지역:r.지역||"",rows:[],동수합:0,연면적합:0};
+        schoolMap[key].rows.push(r);
+        schoolMap[key].동수합+=(parseInt(r.동수)||0);
+        schoolMap[key].연면적합+=(parseFloat(r.연면적)||0);
+      });
+      return {
+        key: pk,
+        label: periodLabel(pk),
+        totalRows: group.rows.length,
+        schools: Object.values(schoolMap).sort((a,b)=>a.학교명.localeCompare(b.학교명))
+      };
+    });
+    return result;
   })();
-  const [expSch,setExpSch]=useState(new Set());
+
+  const togPeriod=k=>setExpPeriod(s=>{const n=new Set(s);n.has(k)?n.delete(k):n.add(k);return n;});
   const togSch=n=>setExpSch(s=>{const n2=new Set(s);n2.has(n)?n2.delete(n):n2.add(n);return n2;});
 
   const cntProg=rows.filter(r=>(r.progress||0)<6).length;
@@ -436,9 +551,14 @@ function SiteManager({rows,setRows,members,isAdmin}) {
     {k:"status",l:"상태"},{k:"actions",l:"관리"},
   ];
 
+  // 전체 펼치기 대상 키 (반기 + 학교)
+  const allPeriodKeys = periodGroups.map(g=>g.key);
+  const allSchoolKeys = periodGroups.flatMap(g=>g.schools.map(s=>g.key+":"+s.학교명));
+  const isAllExpanded = expPeriod.size===allPeriodKeys.length && expSch.size===allSchoolKeys.length && allPeriodKeys.length>0;
+
   return(
     <div style={{display:"flex",flexDirection:"column",gap:12}} onClick={()=>setOpenDD(null)}>
-      {/* 토스트 메시지 */}
+      {/* 토스트 */}
       {toast&&(
         <div style={{position:"fixed",bottom:88,left:"50%",transform:"translateX(-50%)",
           background:toast.type==="delete"?"#1e293b":"#16a34a",
@@ -446,10 +566,11 @@ function SiteManager({rows,setRows,members,isAdmin}) {
           boxShadow:"0 8px 24px rgba(0,0,0,0.18)",zIndex:999,
           display:"flex",alignItems:"center",gap:8,whiteSpace:"nowrap",
           animation:"fadeInUp 0.2s ease"}}>
-          {toast.type==="delete"?"🗑 ":"✅ "}{toast.msg}
+          {toast.type==="delete"?"🗑 ":""}{toast.msg}
         </div>
       )}
       <style>{`@keyframes fadeInUp{from{opacity:0;transform:translate(-50%,10px)}to{opacity:1;transform:translate(-50%,0)}}`}</style>
+
       {/* 진행중 / 완료 / 전체 탭 */}
       <div style={{display:"flex",background:"#e2e8f0",borderRadius:12,padding:4,gap:2}}>
         {[
@@ -478,24 +599,26 @@ function SiteManager({rows,setRows,members,isAdmin}) {
             <button onClick={()=>setColF({})} style={{padding:"7px 12px",borderRadius:8,border:"1px solid #fca5a5",background:"#fff1f2",color:"#dc2626",fontSize:12,cursor:"pointer",fontWeight:600,whiteSpace:"nowrap"}}>필터 초기화</button>}
         </div>
         <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-          {/* 학교 전체 펼치기/접기 */}
-          <button onClick={()=>setExpSch(expSch.size===grouped.length?new Set():new Set(grouped.map(g=>g.학교명)))}
+          <button onClick={()=>{
+              if(isAllExpanded){ setExpPeriod(new Set()); setExpSch(new Set()); }
+              else { setExpPeriod(new Set(allPeriodKeys)); setExpSch(new Set(allSchoolKeys)); }
+            }}
             style={{padding:"7px 12px",borderRadius:8,border:"1px solid #cbd5e1",background:"#fff",color:"#475569",fontSize:12,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>
-            {expSch.size===grouped.length&&grouped.length>0?"🔼 전체 접기":"🔽 전체 펼치기"}
+            {isAllExpanded?"🔼 전체 접기":"🔽 전체 펼치기"}
           </button>
-          {/* 현장 추가 */}
           <button onClick={()=>{setAddOpen(true);setAddF({});}}
             style={{padding:"7px 14px",borderRadius:8,border:"none",background:"#16a34a",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:4}}>➕ 현장 추가</button>
-          {/* 엑셀 내보내기 */}
           <button onClick={()=>exportExcel(rows)}
             style={{padding:"7px 14px",borderRadius:8,border:"1px solid #16a34a",background:"#f0fdf4",color:"#16a34a",fontSize:12,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>📥 엑셀 다운로드</button>
-          {/* 엑셀 업로드 */}
           <button onClick={()=>fileRef.current.click()}
             style={{padding:"7px 14px",borderRadius:8,border:"none",background:"#1d4ed8",color:"#fff",fontSize:12,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>📤 엑셀 업로드</button>
           <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleFile} style={{display:"none"}}/>
         </div>
       </div>
-      <div style={{fontSize:12,color:"#64748b"}}>전체 <strong>{rows.length}</strong>건 · 표시 <strong style={{color:"#1d4ed8"}}>{filtered.length}</strong>건 · 학교 <strong style={{color:"#7c3aed"}}>{grouped.length}</strong>개</div>
+      <div style={{fontSize:12,color:"#64748b"}}>
+        전체 <strong>{rows.length}</strong>건 · 표시 <strong style={{color:"#1d4ed8"}}>{filtered.length}</strong>건 · 
+        반기그룹 <strong style={{color:"#7c3aed"}}>{periodGroups.length}</strong>개
+      </div>
 
       {/* 테이블 */}
       <div style={{background:"#fff",borderRadius:14,boxShadow:"0 1px 4px rgba(0,0,0,.07)",overflow:"auto"}} onClick={e=>e.stopPropagation()}>
@@ -530,70 +653,91 @@ function SiteManager({rows,setRows,members,isAdmin}) {
             </tr>
           </thead>
           <tbody>
-            {grouped.map(g=>{
-              const isOpen=expSch.has(g.학교명);
-              // 학교 전체 긴급도 (가장 빠른 완수일 기준)
-              const minD=g.rows.reduce((m,r)=>{const d=diffDays(r.완수일);if(d===null)return m;return m===null?d:Math.min(m,d);},null);
+            {periodGroups.map(pg=>{
+              const periodOpen=expPeriod.has(pg.key);
               return(
-                <React.Fragment key={g.학교명}>
-                  {/* 학교 헤더 행 */}
-                  <tr onClick={()=>togSch(g.학교명)} style={{cursor:"pointer",background:isOpen?"#eff6ff":"#f8fafc",borderBottom:"1px solid #e5e7eb",borderTop:"2px solid #e5e7eb"}}>
-                    <td colSpan={16} style={{padding:"10px 14px"}}>
+                <React.Fragment key={pg.key}>
+                  {/* 📅 반기 헤더 */}
+                  <tr onClick={()=>togPeriod(pg.key)} style={{cursor:"pointer",background:periodOpen?"#1e293b":"#334155",color:"#fff",borderTop:"3px solid #0f172a"}}>
+                    <td colSpan={16} style={{padding:"12px 18px"}}>
                       <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-                        <span style={{fontSize:13,color:"#475569",width:16,textAlign:"center"}}>{isOpen?"▼":"▶"}</span>
-                        <span style={{fontWeight:700,fontSize:14,color:"#0f172a"}}>🏫 {g.학교명}</span>
-                        {g.지역&&<span style={{fontSize:11,color:"#64748b"}}>{g.지역}</span>}
-                        <span style={{background:"#e0e7ff",color:"#4338ca",fontSize:11,fontWeight:700,padding:"2px 9px",borderRadius:20}}>{g.rows.length}개 동</span>
-                        <span style={{fontSize:11,color:"#475569"}}>연면적 <strong style={{color:"#0f172a"}}>{g.연면적합?g.연면적합.toLocaleString():0}㎡</strong></span>
-                        {(()=>{
-                          const nm=g.rows[0]?.납품방법||"현장납품";
-                          const next=nm==="현장납품"?"택배납품":"현장납품";
-                          return(
-                            <span onClick={e=>{e.stopPropagation();const u=rows.map(r=>g.rows.some(gr=>gr.id===r.id)?{...r,납품방법:next}:r);update(u);}}
-                              title="클릭하면 납품방법 전체 변경"
-                              style={{background:nm==="현장납품"?"#eff6ff":"#f5f3ff",color:nm==="현장납품"?"#1d4ed8":"#7c3aed",border:`1px solid ${nm==="현장납품"?"#bfdbfe":"#ddd6fe"}`,borderRadius:20,padding:"2px 10px",fontSize:11,fontWeight:700,cursor:"pointer",userSelect:"none"}}>
-                              {nm==="현장납품"?"🏫 현장납품":"📦 택배납품"}
-                            </span>
-                          );
-                        })()}
-                        <span style={{marginLeft:"auto",background:urgBg(minD),color:urgC(minD),borderRadius:20,padding:"2px 11px",fontWeight:700,fontSize:12}}>{dLabel(minD)}</span>
+                        <span style={{fontSize:13,color:"#94a3b8",width:16,textAlign:"center"}}>{periodOpen?"▼":"▶"}</span>
+                        <span style={{fontSize:13,fontWeight:800,color:"#fff"}}>📅 {pg.label}</span>
+                        <span style={{background:"#475569",color:"#fff",fontSize:11,fontWeight:700,padding:"2px 10px",borderRadius:20}}>{pg.schools.length}개 학교</span>
+                        <span style={{background:"#0f172a",color:"#94a3b8",fontSize:11,fontWeight:700,padding:"2px 10px",borderRadius:20}}>{pg.totalRows}개 행</span>
                       </div>
                     </td>
                   </tr>
-                  {/* 펼쳤을 때 동 행들 */}
-                  {isOpen&&g.rows.map((r,i)=>{
-                    const d=diffDays(r.완수일);
+
+                  {/* 반기 펼쳤을 때: 학교 그룹들 */}
+                  {periodOpen && pg.schools.map(g=>{
+                    const schKey = pg.key+":"+g.학교명;
+                    const isOpen = expSch.has(schKey);
+                    const minD=g.rows.reduce((m,r)=>{const d=diffDays(r.완수일);if(d===null)return m;return m===null?d:Math.min(m,d);},null);
+                    const isNew = isNewSchool(g.학교명);
                     return(
-                      <tr key={r.id} style={{borderBottom:"1px solid #f1f5f9",background:i%2?"#fafafa":"#fff"}}>
-                        <td style={{padding:"9px 8px",color:"#94a3b8",borderRight:"1px solid #f1f5f9"}}>{r.no}</td>
-                        <td style={{padding:"9px 8px",borderRight:"1px solid #f1f5f9"}}><span style={{background:"#ede9fe",color:"#7c3aed",borderRadius:20,padding:"2px 8px",fontSize:10,fontWeight:600}}>{r.점검종류}</span></td>
-                        <td style={{padding:"9px 8px",color:"#475569",borderRight:"1px solid #f1f5f9",whiteSpace:"nowrap"}}>{r.지역}</td>
-                        <td style={{padding:"9px 8px",fontWeight:700,borderRight:"1px solid #f1f5f9",whiteSpace:"nowrap",color:"#94a3b8"}}>{r.학교명}</td>
-                        <td style={{padding:"9px 8px",color:"#475569",borderRight:"1px solid #f1f5f9",whiteSpace:"nowrap"}}>{r.시설명}</td>
-                        <td style={{padding:"9px 8px",textAlign:"right",borderRight:"1px solid #f1f5f9",whiteSpace:"nowrap"}}>{r.연면적?r.연면적.toLocaleString():"-"}</td>
-                        <td style={{padding:"9px 8px",borderRight:"1px solid #f1f5f9",whiteSpace:"nowrap"}}>{r.현장조사?<span style={{color:"#1d4ed8",fontWeight:600}}>{r.현장조사}</span>:<span style={{color:"#d1d5db"}}>-</span>}</td>
-                        <td style={{padding:"9px 8px",color:"#475569",borderRight:"1px solid #f1f5f9",whiteSpace:"nowrap"}}>{r.착수일||<span style={{color:"#d1d5db"}}>-</span>}</td>
-                        <td style={{padding:"9px 8px",borderRight:"1px solid #f1f5f9",whiteSpace:"nowrap"}}>{r.완수일?<span style={{color:"#ea580c",fontWeight:600}}>{r.완수일}</span>:<span style={{color:"#d1d5db"}}>-</span>}</td>
-                        <td style={{padding:"9px 8px",textAlign:"center",borderRight:"1px solid #f1f5f9"}}>
-                          <span style={{background:urgBg(d),color:urgC(d),borderRadius:20,padding:"2px 9px",fontWeight:700,fontSize:11}}>{dLabel(d)}</span>
-                        </td>
-                        <td style={{padding:"9px 8px",borderRight:"1px solid #f1f5f9",maxWidth:100}}>{r.특기사항?<span style={{background:"#fff7ed",color:"#92400e",borderRadius:6,padding:"2px 5px",fontSize:10}}>{r.특기사항}</span>:<span style={{color:"#d1d5db"}}>-</span>}</td>
-                        <td style={{padding:"9px 8px",borderRight:"1px solid #f1f5f9"}}>
-                          {r.lead?<div style={{display:"flex",alignItems:"center",gap:4}}><Av name={r.lead} size={18}/><span style={{fontSize:11}}>{r.lead}</span></div>:<span style={{color:"#d1d5db",fontSize:11}}>미배정</span>}
-                        </td>
-                        <td style={{padding:"9px 8px",borderRight:"1px solid #f1f5f9",minWidth:130}}><PBar step={r.progress||0} compact/></td>
-                        <td style={{padding:"9px 8px",borderRight:"1px solid #f1f5f9"}}>
-                          <Bdg label={r.status||"예정"} bg={SS[r.status||"예정"]?.bg||"#f3f4f6"} c={SS[r.status||"예정"]?.c||"#6b7280"}/>
-                        </td>
-                        <td style={{padding:"9px 8px",whiteSpace:"nowrap"}}>
-                          <div style={{display:"flex",gap:4}}>
-                            <button onClick={()=>{setEditM(r);setEditF({현장조사:r.현장조사||"",착수일:r.착수일||"",완수일:r.완수일||"",납품일:r.납품일||"",lead:r.lead||members[0]||"",납품방법:r.납품방법||"현장납품",status:r.status||"예정",특기사항:r.특기사항||"",FMS:r.FMS||"",동수:r.동수||0,연면적:r.연면적||0,지역:r.지역||"",시설명:r.시설명||""});}}
-                              style={{padding:"4px 9px",borderRadius:6,border:"1px solid #e2e8f0",background:"#fff",fontSize:11,cursor:"pointer",color:"#374151"}}>✏️</button>
-                            <button onClick={()=>setConfirm(r)}
-                              style={{padding:"4px 9px",borderRadius:6,border:"1px solid #fca5a5",background:"#fff1f2",fontSize:11,cursor:"pointer",color:"#dc2626"}}>🗑</button>
-                          </div>
-                        </td>
-                      </tr>
+                      <React.Fragment key={schKey}>
+                        <tr onClick={()=>togSch(schKey)} style={{cursor:"pointer",background:isOpen?"#eff6ff":"#f8fafc",borderBottom:"1px solid #e5e7eb"}}>
+                          <td colSpan={16} style={{padding:"10px 14px 10px 32px"}}>
+                            <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                              <span style={{fontSize:13,color:"#475569",width:16,textAlign:"center"}}>{isOpen?"▼":"▶"}</span>
+                              <span style={{fontWeight:700,fontSize:14,color:"#0f172a"}}>🏫 {g.학교명}</span>
+                              {isNew && <span style={{background:"linear-gradient(135deg,#f97316,#dc2626)",color:"#fff",fontSize:10,fontWeight:800,padding:"2px 8px",borderRadius:20,letterSpacing:0.5,boxShadow:"0 1px 3px rgba(220,38,38,0.3)"}}>🆕 NEW</span>}
+                              {g.지역&&<span style={{fontSize:11,color:"#64748b"}}>{g.지역}</span>}
+                              <span style={{background:"#e0e7ff",color:"#4338ca",fontSize:11,fontWeight:700,padding:"2px 9px",borderRadius:20}}>{g.rows.length}개 동</span>
+                              <span style={{fontSize:11,color:"#475569"}}>연면적 <strong style={{color:"#0f172a"}}>{g.연면적합?g.연면적합.toLocaleString():0}㎡</strong></span>
+                              {(()=>{
+                                const nm=g.rows[0]?.납품방법||"현장납품";
+                                const next=nm==="현장납품"?"택배납품":"현장납품";
+                                return(
+                                  <span onClick={e=>{e.stopPropagation();const u=rows.map(r=>g.rows.some(gr=>gr.id===r.id)?{...r,납품방법:next}:r);update(u);}}
+                                    title="클릭하면 납품방법 전체 변경"
+                                    style={{background:nm==="현장납품"?"#eff6ff":"#f5f3ff",color:nm==="현장납품"?"#1d4ed8":"#7c3aed",border:`1px solid ${nm==="현장납품"?"#bfdbfe":"#ddd6fe"}`,borderRadius:20,padding:"2px 10px",fontSize:11,fontWeight:700,cursor:"pointer",userSelect:"none"}}>
+                                    {nm==="현장납품"?"🏫 현장납품":"📦 택배납품"}
+                                  </span>
+                                );
+                              })()}
+                              <span style={{marginLeft:"auto",background:urgBg(minD),color:urgC(minD),borderRadius:20,padding:"2px 11px",fontWeight:700,fontSize:12}}>{dLabel(minD)}</span>
+                            </div>
+                          </td>
+                        </tr>
+
+                        {isOpen && g.rows.map((r,i)=>{
+                          const d=diffDays(r.완수일);
+                          return(
+                            <tr key={r.id} style={{borderBottom:"1px solid #f1f5f9",background:i%2?"#fafafa":"#fff"}}>
+                              <td style={{padding:"9px 8px",color:"#94a3b8",borderRight:"1px solid #f1f5f9"}}>{r.no}</td>
+                              <td style={{padding:"9px 8px",borderRight:"1px solid #f1f5f9"}}><span style={{background:"#ede9fe",color:"#7c3aed",borderRadius:20,padding:"2px 8px",fontSize:10,fontWeight:600}}>{r.점검종류}</span></td>
+                              <td style={{padding:"9px 8px",color:"#475569",borderRight:"1px solid #f1f5f9",whiteSpace:"nowrap"}}>{r.지역}</td>
+                              <td style={{padding:"9px 8px",fontWeight:700,borderRight:"1px solid #f1f5f9",whiteSpace:"nowrap",color:"#94a3b8"}}>{r.학교명}</td>
+                              <td style={{padding:"9px 8px",color:"#475569",borderRight:"1px solid #f1f5f9",whiteSpace:"nowrap"}}>{r.시설명}</td>
+                              <td style={{padding:"9px 8px",textAlign:"right",borderRight:"1px solid #f1f5f9",whiteSpace:"nowrap"}}>{r.연면적?r.연면적.toLocaleString():"-"}</td>
+                              <td style={{padding:"9px 8px",borderRight:"1px solid #f1f5f9",whiteSpace:"nowrap"}}>{r.현장조사?<span style={{color:"#1d4ed8",fontWeight:600}}>{r.현장조사}</span>:<span style={{color:"#d1d5db"}}>-</span>}</td>
+                              <td style={{padding:"9px 8px",color:"#475569",borderRight:"1px solid #f1f5f9",whiteSpace:"nowrap"}}>{r.착수일||<span style={{color:"#d1d5db"}}>-</span>}</td>
+                              <td style={{padding:"9px 8px",borderRight:"1px solid #f1f5f9",whiteSpace:"nowrap"}}>{r.완수일?<span style={{color:"#ea580c",fontWeight:600}}>{r.완수일}</span>:<span style={{color:"#d1d5db"}}>-</span>}</td>
+                              <td style={{padding:"9px 8px",textAlign:"center",borderRight:"1px solid #f1f5f9"}}>
+                                <span style={{background:urgBg(d),color:urgC(d),borderRadius:20,padding:"2px 9px",fontWeight:700,fontSize:11}}>{dLabel(d)}</span>
+                              </td>
+                              <td style={{padding:"9px 8px",borderRight:"1px solid #f1f5f9",maxWidth:100}}>{r.특기사항?<span style={{background:"#fff7ed",color:"#92400e",borderRadius:6,padding:"2px 5px",fontSize:10}}>{r.특기사항}</span>:<span style={{color:"#d1d5db"}}>-</span>}</td>
+                              <td style={{padding:"9px 8px",borderRight:"1px solid #f1f5f9"}}>
+                                {r.lead?<div style={{display:"flex",alignItems:"center",gap:4}}><Av name={r.lead} size={18}/><span style={{fontSize:11}}>{r.lead}</span></div>:<span style={{color:"#d1d5db",fontSize:11}}>미배정</span>}
+                              </td>
+                              <td style={{padding:"9px 8px",borderRight:"1px solid #f1f5f9",minWidth:130}}><PBar step={r.progress||0} compact/></td>
+                              <td style={{padding:"9px 8px",borderRight:"1px solid #f1f5f9"}}>
+                                <Bdg label={r.status||"예정"} bg={SS[r.status||"예정"]?.bg||"#f3f4f6"} c={SS[r.status||"예정"]?.c||"#6b7280"}/>
+                              </td>
+                              <td style={{padding:"9px 8px",whiteSpace:"nowrap"}}>
+                                <div style={{display:"flex",gap:4}}>
+                                  <button onClick={()=>{setEditM(r);setEditF({현장조사:r.현장조사||"",착수일:r.착수일||"",완수일:r.완수일||"",납품일:r.납품일||"",lead:r.lead||members[0]||"",납품방법:r.납품방법||"현장납품",status:r.status||"예정",특기사항:r.특기사항||"",FMS:r.FMS||"",동수:r.동수||0,연면적:r.연면적||0,지역:r.지역||"",시설명:r.시설명||""});}}
+                                    style={{padding:"4px 9px",borderRadius:6,border:"1px solid #e2e8f0",background:"#fff",fontSize:11,cursor:"pointer",color:"#374151"}}>✏️</button>
+                                  <button onClick={()=>setConfirm(r)}
+                                    style={{padding:"4px 9px",borderRadius:6,border:"1px solid #fca5a5",background:"#fff1f2",fontSize:11,cursor:"pointer",color:"#dc2626"}}>🗑</button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </React.Fragment>
                     );
                   })}
                 </React.Fragment>
@@ -604,12 +748,11 @@ function SiteManager({rows,setRows,members,isAdmin}) {
         </table>
       </div>
 
-      {/* ── 엑셀 업로드 미리보기 (중복 스킵 + 새 항목만 추가) ── */}
+      {/* 엑셀 업로드 미리보기 — 기존과 동일 */}
       {preview&&(()=>{
         const norm=s=>(s||"").toString().trim().toLowerCase();
         const existsSet=new Set(rows.map(r=>`${norm(r.학교명)}||${norm(r.지역)}`));
         const toAdd=preview.filter(r=>r.학교명&&!existsSet.has(`${norm(r.학교명)}||${norm(r.지역)}`));
-        // 기존에 있는 행 중 엑셀에 연면적이 있으면 무조건 업데이트 대상
         const toUpdate=preview.filter(r=>{
           if(!r.학교명||!existsSet.has(`${norm(r.학교명)}||${norm(r.지역)}`))return false;
           const match=rows.find(w=>
@@ -617,13 +760,11 @@ function SiteManager({rows,setRows,members,isAdmin}) {
             norm(w.지역)===norm(r.지역)&&
             norm(w.시설명)===norm(r.시설명)
           );
-          // 매칭되는 행이 있고, 엑셀에 연면적이 0보다 크면 업데이트 대상
           return match && parseFloat(r.연면적)>0;
         });
         const skipped=preview.length-toAdd.length-toUpdate.length;
         const doImport=()=>{
           const maxNo=rows.reduce((m,r)=>Math.max(m,r.no||0),0);
-          // 기존 행 연면적+동수 업데이트
           let updated=[...rows];
           toUpdate.forEach(ex=>{
             updated=updated.map(w=>{
@@ -641,7 +782,6 @@ function SiteManager({rows,setRows,members,isAdmin}) {
               return w;
             });
           });
-          // 새 항목 추가
           const appended=toAdd.map((r,i)=>({...r,no:maxNo+i+1,id:`r_${Date.now()}_${i}`,납품일:r.납품일||""}));
           update([...updated,...appended]);
           setPreview(null);
@@ -672,7 +812,6 @@ function SiteManager({rows,setRows,members,isAdmin}) {
                 </button>
               </div>
             </div>
-            {/* 안내 */}
             <div style={{background:"#f0fdf4",borderRadius:8,padding:"10px 14px",border:"1px solid #86efac",fontSize:12,color:"#15803d",marginBottom:14}}>
               ✅ <strong>신규:</strong> 웹에 없는 학교는 추가돼요 · <strong style={{color:"#7c3aed"}}>연면적 업데이트:</strong> 같은 학교/동인데 연면적이 다르면 엑셀 값으로 업데이트돼요 · 나머지 정보(날짜 등)는 웹 데이터 유지
             </div>
@@ -711,7 +850,7 @@ function SiteManager({rows,setRows,members,isAdmin}) {
         );
       })()}
 
-      {/* ── 행 수정 모달 ── */}
+      {/* 수정 모달 — 기존과 동일 */}
       {editM&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200}}>
           <div style={{background:"#fff",borderRadius:16,padding:"26px",width:480,maxHeight:"90vh",overflowY:"auto",boxShadow:"0 20px 60px rgba(0,0,0,.2)"}}>
@@ -720,56 +859,29 @@ function SiteManager({rows,setRows,members,isAdmin}) {
               <button onClick={()=>setEditM(null)} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#94a3b8"}}>✕</button>
             </div>
             <div style={{background:"#f8fafc",borderRadius:10,padding:"10px 14px",marginBottom:16,border:"1px solid #e2e8f0",fontWeight:700,fontSize:14}}>{editM.학교명} · {editM.시설명}</div>
-
-            {/* 지역 + 시설명 */}
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
-              <div>
-                <label style={{fontSize:12,fontWeight:600,color:"#374151",display:"block",marginBottom:4}}>지역</label>
-                <input value={editF.지역||""} onChange={e=>setEditF(f=>({...f,지역:e.target.value}))}
-                  style={{width:"100%",border:"1px solid #e5e7eb",borderRadius:8,padding:"8px 12px",fontSize:13,boxSizing:"border-box"}}/>
-              </div>
-              <div>
-                <label style={{fontSize:12,fontWeight:600,color:"#374151",display:"block",marginBottom:4}}>시설명</label>
-                <input value={editF.시설명||""} onChange={e=>setEditF(f=>({...f,시설명:e.target.value}))}
-                  style={{width:"100%",border:"1px solid #e5e7eb",borderRadius:8,padding:"8px 12px",fontSize:13,boxSizing:"border-box"}}/>
-              </div>
+              <div><label style={{fontSize:12,fontWeight:600,color:"#374151",display:"block",marginBottom:4}}>지역</label>
+                <input value={editF.지역||""} onChange={e=>setEditF(f=>({...f,지역:e.target.value}))} style={{width:"100%",border:"1px solid #e5e7eb",borderRadius:8,padding:"8px 12px",fontSize:13,boxSizing:"border-box"}}/></div>
+              <div><label style={{fontSize:12,fontWeight:600,color:"#374151",display:"block",marginBottom:4}}>시설명</label>
+                <input value={editF.시설명||""} onChange={e=>setEditF(f=>({...f,시설명:e.target.value}))} style={{width:"100%",border:"1px solid #e5e7eb",borderRadius:8,padding:"8px 12px",fontSize:13,boxSizing:"border-box"}}/></div>
             </div>
-
-            {/* 동수 + 연면적 */}
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
-              <div>
-                <label style={{fontSize:12,fontWeight:600,color:"#374151",display:"block",marginBottom:4}}>동수</label>
-                <input type="number" value={editF.동수||""} onChange={e=>setEditF(f=>({...f,동수:e.target.value}))}
-                  style={{width:"100%",border:"1px solid #e5e7eb",borderRadius:8,padding:"8px 12px",fontSize:13,boxSizing:"border-box"}}/>
-              </div>
-              <div>
-                <label style={{fontSize:12,fontWeight:600,color:"#374151",display:"block",marginBottom:4}}>연면적(㎡)</label>
-                <input type="number" value={editF.연면적||""} onChange={e=>setEditF(f=>({...f,연면적:e.target.value}))}
-                  style={{width:"100%",border:"1px solid #e5e7eb",borderRadius:8,padding:"8px 12px",fontSize:13,boxSizing:"border-box"}}/>
-              </div>
+              <div><label style={{fontSize:12,fontWeight:600,color:"#374151",display:"block",marginBottom:4}}>동수</label>
+                <input type="number" value={editF.동수||""} onChange={e=>setEditF(f=>({...f,동수:e.target.value}))} style={{width:"100%",border:"1px solid #e5e7eb",borderRadius:8,padding:"8px 12px",fontSize:13,boxSizing:"border-box"}}/></div>
+              <div><label style={{fontSize:12,fontWeight:600,color:"#374151",display:"block",marginBottom:4}}>연면적(㎡)</label>
+                <input type="number" value={editF.연면적||""} onChange={e=>setEditF(f=>({...f,연면적:e.target.value}))} style={{width:"100%",border:"1px solid #e5e7eb",borderRadius:8,padding:"8px 12px",fontSize:13,boxSizing:"border-box"}}/></div>
             </div>
-
-            {/* 날짜 (납품일 포함) */}
             {[["현장조사일","현장조사"],["착수일","착수일"],["완수일","완수일"],["납품일","납품일"]].map(([l,k])=>(
               <div key={k} style={{marginBottom:12}}>
                 <label style={{fontSize:12,fontWeight:600,color:"#374151",display:"block",marginBottom:4}}>{l}</label>
-                <input type="date" value={editF[k]||""} onChange={e=>setEditF(f=>({...f,[k]:e.target.value}))}
-                  style={{width:"100%",border:"1px solid #e5e7eb",borderRadius:8,padding:"8px 12px",fontSize:13,boxSizing:"border-box"}}/>
+                <input type="date" value={editF[k]||""} onChange={e=>setEditF(f=>({...f,[k]:e.target.value}))} style={{width:"100%",border:"1px solid #e5e7eb",borderRadius:8,padding:"8px 12px",fontSize:13,boxSizing:"border-box"}}/>
               </div>
             ))}
-
-            {/* 담당자 */}
-            <div style={{marginBottom:12}}>
-              <label style={{fontSize:12,fontWeight:600,color:"#374151",display:"block",marginBottom:4}}>담당자</label>
-              <select value={editF.lead||members[0]} onChange={e=>setEditF(f=>({...f,lead:e.target.value}))}
-                style={{width:"100%",border:"1px solid #e5e7eb",borderRadius:8,padding:"8px 12px",fontSize:13,background:"#fff"}}>
+            <div style={{marginBottom:12}}><label style={{fontSize:12,fontWeight:600,color:"#374151",display:"block",marginBottom:4}}>담당자</label>
+              <select value={editF.lead||members[0]} onChange={e=>setEditF(f=>({...f,lead:e.target.value}))} style={{width:"100%",border:"1px solid #e5e7eb",borderRadius:8,padding:"8px 12px",fontSize:13,background:"#fff"}}>
                 {members.map(m=><option key={m}>{m}</option>)}
-              </select>
-            </div>
-
-            {/* 납품방법 */}
-            <div style={{marginBottom:12}}>
-              <label style={{fontSize:12,fontWeight:600,color:"#374151",display:"block",marginBottom:6}}>납품방법</label>
+              </select></div>
+            <div style={{marginBottom:12}}><label style={{fontSize:12,fontWeight:600,color:"#374151",display:"block",marginBottom:6}}>납품방법</label>
               <div style={{display:"flex",gap:8}}>
                 {["현장납품","택배납품"].map(v=>(
                   <button key={v} onClick={()=>setEditF(f=>({...f,납품방법:v}))}
@@ -777,32 +889,15 @@ function SiteManager({rows,setRows,members,isAdmin}) {
                     {v==="현장납품"?"🏫 현장납품":"📦 택배납품"}
                   </button>
                 ))}
-              </div>
-            </div>
-
-            {/* 상태 */}
-            <div style={{marginBottom:12}}>
-              <label style={{fontSize:12,fontWeight:600,color:"#374151",display:"block",marginBottom:4}}>상태</label>
-              <select value={editF.status||"예정"} onChange={e=>setEditF(f=>({...f,status:e.target.value}))}
-                style={{width:"100%",border:"1px solid #e5e7eb",borderRadius:8,padding:"8px 12px",fontSize:13,background:"#fff"}}>
+              </div></div>
+            <div style={{marginBottom:12}}><label style={{fontSize:12,fontWeight:600,color:"#374151",display:"block",marginBottom:4}}>상태</label>
+              <select value={editF.status||"예정"} onChange={e=>setEditF(f=>({...f,status:e.target.value}))} style={{width:"100%",border:"1px solid #e5e7eb",borderRadius:8,padding:"8px 12px",fontSize:13,background:"#fff"}}>
                 {STATUS_LIST.map(s=><option key={s}>{s}</option>)}
-              </select>
-            </div>
-
-            {/* FMS */}
-            <div style={{marginBottom:12}}>
-              <label style={{fontSize:12,fontWeight:600,color:"#374151",display:"block",marginBottom:4}}>FMS 아이디/비번</label>
-              <input value={editF.FMS||""} onChange={e=>setEditF(f=>({...f,FMS:e.target.value}))} placeholder="FMS 정보"
-                style={{width:"100%",border:"1px solid #e5e7eb",borderRadius:8,padding:"8px 12px",fontSize:13,boxSizing:"border-box"}}/>
-            </div>
-
-            {/* 특기사항 */}
-            <div style={{marginBottom:20}}>
-              <label style={{fontSize:12,fontWeight:600,color:"#374151",display:"block",marginBottom:4}}>특기사항</label>
-              <input value={editF.특기사항||""} onChange={e=>setEditF(f=>({...f,특기사항:e.target.value}))} placeholder="특기사항"
-                style={{width:"100%",border:"1px solid #e5e7eb",borderRadius:8,padding:"8px 12px",fontSize:13,boxSizing:"border-box"}}/>
-            </div>
-
+              </select></div>
+            <div style={{marginBottom:12}}><label style={{fontSize:12,fontWeight:600,color:"#374151",display:"block",marginBottom:4}}>FMS 아이디/비번</label>
+              <input value={editF.FMS||""} onChange={e=>setEditF(f=>({...f,FMS:e.target.value}))} placeholder="FMS 정보" style={{width:"100%",border:"1px solid #e5e7eb",borderRadius:8,padding:"8px 12px",fontSize:13,boxSizing:"border-box"}}/></div>
+            <div style={{marginBottom:20}}><label style={{fontSize:12,fontWeight:600,color:"#374151",display:"block",marginBottom:4}}>특기사항</label>
+              <input value={editF.특기사항||""} onChange={e=>setEditF(f=>({...f,특기사항:e.target.value}))} placeholder="특기사항" style={{width:"100%",border:"1px solid #e5e7eb",borderRadius:8,padding:"8px 12px",fontSize:13,boxSizing:"border-box"}}/></div>
             <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
               <button onClick={()=>setEditM(null)} style={{padding:"9px 18px",borderRadius:8,border:"1px solid #e5e7eb",background:"#fff",fontSize:13,cursor:"pointer"}}>취소</button>
               <button onClick={saveEdit} style={{padding:"9px 18px",borderRadius:8,border:"none",background:"#1d4ed8",color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer"}}>저장</button>
@@ -811,7 +906,7 @@ function SiteManager({rows,setRows,members,isAdmin}) {
         </div>
       )}
 
-      {/* ── 현장 추가 모달 ── */}
+      {/* 현장 추가 모달 — 기존과 동일 */}
       {addOpen&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:16}}>
           <div style={{background:"#fff",borderRadius:16,padding:"26px",width:520,maxWidth:"100%",maxHeight:"90vh",overflowY:"auto",boxShadow:"0 20px 60px rgba(0,0,0,.2)"}}>
@@ -819,70 +914,33 @@ function SiteManager({rows,setRows,members,isAdmin}) {
               <h2 style={{margin:0,fontSize:16,fontWeight:700}}>➕ 새 현장 추가</h2>
               <button onClick={()=>{setAddOpen(false);setAddF({});}} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#94a3b8"}}>✕</button>
             </div>
-
-            {/* 학교명 (필수) */}
-            <div style={{marginBottom:12}}>
-              <label style={{fontSize:12,fontWeight:600,color:"#374151",display:"block",marginBottom:4}}>학교명 <span style={{color:"#dc2626"}}>*</span></label>
-              <input value={addF.학교명||""} onChange={e=>setAddF(f=>({...f,학교명:e.target.value}))} placeholder="예: 시흥경찰서"
-                style={{width:"100%",border:"1px solid #e5e7eb",borderRadius:8,padding:"8px 12px",fontSize:13,boxSizing:"border-box"}} autoFocus/>
-            </div>
-
-            {/* 시설명 */}
-            <div style={{marginBottom:12}}>
-              <label style={{fontSize:12,fontWeight:600,color:"#374151",display:"block",marginBottom:4}}>시설명</label>
-              <input value={addF.시설명||""} onChange={e=>setAddF(f=>({...f,시설명:e.target.value}))} placeholder="예: 시흥은행지구대"
-                style={{width:"100%",border:"1px solid #e5e7eb",borderRadius:8,padding:"8px 12px",fontSize:13,boxSizing:"border-box"}}/>
-            </div>
-
-            {/* 지역 + 점검종류 */}
+            <div style={{marginBottom:12}}><label style={{fontSize:12,fontWeight:600,color:"#374151",display:"block",marginBottom:4}}>학교명 <span style={{color:"#dc2626"}}>*</span></label>
+              <input value={addF.학교명||""} onChange={e=>setAddF(f=>({...f,학교명:e.target.value}))} placeholder="예: 시흥경찰서" style={{width:"100%",border:"1px solid #e5e7eb",borderRadius:8,padding:"8px 12px",fontSize:13,boxSizing:"border-box"}} autoFocus/></div>
+            <div style={{marginBottom:12}}><label style={{fontSize:12,fontWeight:600,color:"#374151",display:"block",marginBottom:4}}>시설명</label>
+              <input value={addF.시설명||""} onChange={e=>setAddF(f=>({...f,시설명:e.target.value}))} placeholder="예: 시흥은행지구대" style={{width:"100%",border:"1px solid #e5e7eb",borderRadius:8,padding:"8px 12px",fontSize:13,boxSizing:"border-box"}}/></div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
-              <div>
-                <label style={{fontSize:12,fontWeight:600,color:"#374151",display:"block",marginBottom:4}}>지역</label>
-                <input value={addF.지역||""} onChange={e=>setAddF(f=>({...f,지역:e.target.value}))} placeholder="예: 시흥"
-                  style={{width:"100%",border:"1px solid #e5e7eb",borderRadius:8,padding:"8px 12px",fontSize:13,boxSizing:"border-box"}}/>
-              </div>
-              <div>
-                <label style={{fontSize:12,fontWeight:600,color:"#374151",display:"block",marginBottom:4}}>점검종류</label>
-                <input value={addF.점검종류||""} onChange={e=>setAddF(f=>({...f,점검종류:e.target.value}))} placeholder="예: 정밀"
-                  style={{width:"100%",border:"1px solid #e5e7eb",borderRadius:8,padding:"8px 12px",fontSize:13,boxSizing:"border-box"}}/>
-              </div>
+              <div><label style={{fontSize:12,fontWeight:600,color:"#374151",display:"block",marginBottom:4}}>지역</label>
+                <input value={addF.지역||""} onChange={e=>setAddF(f=>({...f,지역:e.target.value}))} placeholder="예: 시흥" style={{width:"100%",border:"1px solid #e5e7eb",borderRadius:8,padding:"8px 12px",fontSize:13,boxSizing:"border-box"}}/></div>
+              <div><label style={{fontSize:12,fontWeight:600,color:"#374151",display:"block",marginBottom:4}}>점검종류</label>
+                <input value={addF.점검종류||""} onChange={e=>setAddF(f=>({...f,점검종류:e.target.value}))} placeholder="예: 정밀" style={{width:"100%",border:"1px solid #e5e7eb",borderRadius:8,padding:"8px 12px",fontSize:13,boxSizing:"border-box"}}/></div>
             </div>
-
-            {/* 동수 + 연면적 */}
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
-              <div>
-                <label style={{fontSize:12,fontWeight:600,color:"#374151",display:"block",marginBottom:4}}>동수</label>
-                <input type="number" value={addF.동수||""} onChange={e=>setAddF(f=>({...f,동수:e.target.value}))} placeholder="0"
-                  style={{width:"100%",border:"1px solid #e5e7eb",borderRadius:8,padding:"8px 12px",fontSize:13,boxSizing:"border-box"}}/>
-              </div>
-              <div>
-                <label style={{fontSize:12,fontWeight:600,color:"#374151",display:"block",marginBottom:4}}>연면적(㎡)</label>
-                <input type="number" value={addF.연면적||""} onChange={e=>setAddF(f=>({...f,연면적:e.target.value}))} placeholder="0"
-                  style={{width:"100%",border:"1px solid #e5e7eb",borderRadius:8,padding:"8px 12px",fontSize:13,boxSizing:"border-box"}}/>
-              </div>
+              <div><label style={{fontSize:12,fontWeight:600,color:"#374151",display:"block",marginBottom:4}}>동수</label>
+                <input type="number" value={addF.동수||""} onChange={e=>setAddF(f=>({...f,동수:e.target.value}))} placeholder="0" style={{width:"100%",border:"1px solid #e5e7eb",borderRadius:8,padding:"8px 12px",fontSize:13,boxSizing:"border-box"}}/></div>
+              <div><label style={{fontSize:12,fontWeight:600,color:"#374151",display:"block",marginBottom:4}}>연면적(㎡)</label>
+                <input type="number" value={addF.연면적||""} onChange={e=>setAddF(f=>({...f,연면적:e.target.value}))} placeholder="0" style={{width:"100%",border:"1px solid #e5e7eb",borderRadius:8,padding:"8px 12px",fontSize:13,boxSizing:"border-box"}}/></div>
             </div>
-
-            {/* 날짜 3개 */}
             {[["현장조사일","현장조사"],["착수일","착수일"],["완수일","완수일"]].map(([l,k])=>(
               <div key={k} style={{marginBottom:12}}>
                 <label style={{fontSize:12,fontWeight:600,color:"#374151",display:"block",marginBottom:4}}>{l}</label>
-                <input type="date" value={addF[k]||""} onChange={e=>setAddF(f=>({...f,[k]:e.target.value}))}
-                  style={{width:"100%",border:"1px solid #e5e7eb",borderRadius:8,padding:"8px 12px",fontSize:13,boxSizing:"border-box"}}/>
+                <input type="date" value={addF[k]||""} onChange={e=>setAddF(f=>({...f,[k]:e.target.value}))} style={{width:"100%",border:"1px solid #e5e7eb",borderRadius:8,padding:"8px 12px",fontSize:13,boxSizing:"border-box"}}/>
               </div>
             ))}
-
-            {/* 담당자 */}
-            <div style={{marginBottom:12}}>
-              <label style={{fontSize:12,fontWeight:600,color:"#374151",display:"block",marginBottom:4}}>담당자</label>
-              <select value={addF.lead||members[0]||""} onChange={e=>setAddF(f=>({...f,lead:e.target.value}))}
-                style={{width:"100%",border:"1px solid #e5e7eb",borderRadius:8,padding:"8px 12px",fontSize:13,background:"#fff"}}>
+            <div style={{marginBottom:12}}><label style={{fontSize:12,fontWeight:600,color:"#374151",display:"block",marginBottom:4}}>담당자</label>
+              <select value={addF.lead||members[0]||""} onChange={e=>setAddF(f=>({...f,lead:e.target.value}))} style={{width:"100%",border:"1px solid #e5e7eb",borderRadius:8,padding:"8px 12px",fontSize:13,background:"#fff"}}>
                 {members.map(m=><option key={m}>{m}</option>)}
-              </select>
-            </div>
-
-            {/* 납품방법 */}
-            <div style={{marginBottom:12}}>
-              <label style={{fontSize:12,fontWeight:600,color:"#374151",display:"block",marginBottom:6}}>납품방법</label>
+              </select></div>
+            <div style={{marginBottom:12}}><label style={{fontSize:12,fontWeight:600,color:"#374151",display:"block",marginBottom:6}}>납품방법</label>
               <div style={{display:"flex",gap:8}}>
                 {["현장납품","택배납품"].map(v=>(
                   <button key={v} onClick={()=>setAddF(f=>({...f,납품방법:v}))}
@@ -890,39 +948,17 @@ function SiteManager({rows,setRows,members,isAdmin}) {
                     {v==="현장납품"?"🏫 현장납품":"📦 택배납품"}
                   </button>
                 ))}
-              </div>
-            </div>
-
-            {/* 상태 */}
-            <div style={{marginBottom:12}}>
-              <label style={{fontSize:12,fontWeight:600,color:"#374151",display:"block",marginBottom:4}}>상태</label>
-              <select value={addF.status||"예정"} onChange={e=>setAddF(f=>({...f,status:e.target.value}))}
-                style={{width:"100%",border:"1px solid #e5e7eb",borderRadius:8,padding:"8px 12px",fontSize:13,background:"#fff"}}>
+              </div></div>
+            <div style={{marginBottom:12}}><label style={{fontSize:12,fontWeight:600,color:"#374151",display:"block",marginBottom:4}}>상태</label>
+              <select value={addF.status||"예정"} onChange={e=>setAddF(f=>({...f,status:e.target.value}))} style={{width:"100%",border:"1px solid #e5e7eb",borderRadius:8,padding:"8px 12px",fontSize:13,background:"#fff"}}>
                 {STATUS_LIST.map(s=><option key={s}>{s}</option>)}
-              </select>
-            </div>
-
-            {/* 계약금액 */}
-            <div style={{marginBottom:12}}>
-              <label style={{fontSize:12,fontWeight:600,color:"#374151",display:"block",marginBottom:4}}>계약금액 (원)</label>
-              <input type="number" value={addF.계약금액||""} onChange={e=>setAddF(f=>({...f,계약금액:e.target.value}))} placeholder="0"
-                style={{width:"100%",border:"1px solid #e5e7eb",borderRadius:8,padding:"8px 12px",fontSize:13,boxSizing:"border-box"}}/>
-            </div>
-
-            {/* FMS */}
-            <div style={{marginBottom:12}}>
-              <label style={{fontSize:12,fontWeight:600,color:"#374151",display:"block",marginBottom:4}}>FMS 아이디/비번</label>
-              <input value={addF.FMS||""} onChange={e=>setAddF(f=>({...f,FMS:e.target.value}))} placeholder="FMS 정보 (선택)"
-                style={{width:"100%",border:"1px solid #e5e7eb",borderRadius:8,padding:"8px 12px",fontSize:13,boxSizing:"border-box"}}/>
-            </div>
-
-            {/* 특기사항 */}
-            <div style={{marginBottom:20}}>
-              <label style={{fontSize:12,fontWeight:600,color:"#374151",display:"block",marginBottom:4}}>특기사항</label>
-              <input value={addF.특기사항||""} onChange={e=>setAddF(f=>({...f,특기사항:e.target.value}))} placeholder="특기사항 (선택)"
-                style={{width:"100%",border:"1px solid #e5e7eb",borderRadius:8,padding:"8px 12px",fontSize:13,boxSizing:"border-box"}}/>
-            </div>
-
+              </select></div>
+            <div style={{marginBottom:12}}><label style={{fontSize:12,fontWeight:600,color:"#374151",display:"block",marginBottom:4}}>계약금액 (원)</label>
+              <input type="number" value={addF.계약금액||""} onChange={e=>setAddF(f=>({...f,계약금액:e.target.value}))} placeholder="0" style={{width:"100%",border:"1px solid #e5e7eb",borderRadius:8,padding:"8px 12px",fontSize:13,boxSizing:"border-box"}}/></div>
+            <div style={{marginBottom:12}}><label style={{fontSize:12,fontWeight:600,color:"#374151",display:"block",marginBottom:4}}>FMS 아이디/비번</label>
+              <input value={addF.FMS||""} onChange={e=>setAddF(f=>({...f,FMS:e.target.value}))} placeholder="FMS 정보 (선택)" style={{width:"100%",border:"1px solid #e5e7eb",borderRadius:8,padding:"8px 12px",fontSize:13,boxSizing:"border-box"}}/></div>
+            <div style={{marginBottom:20}}><label style={{fontSize:12,fontWeight:600,color:"#374151",display:"block",marginBottom:4}}>특기사항</label>
+              <input value={addF.특기사항||""} onChange={e=>setAddF(f=>({...f,특기사항:e.target.value}))} placeholder="특기사항 (선택)" style={{width:"100%",border:"1px solid #e5e7eb",borderRadius:8,padding:"8px 12px",fontSize:13,boxSizing:"border-box"}}/></div>
             <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
               <button onClick={()=>{setAddOpen(false);setAddF({});}} style={{padding:"9px 18px",borderRadius:8,border:"1px solid #e5e7eb",background:"#fff",fontSize:13,cursor:"pointer"}}>취소</button>
               <button onClick={saveAdd} style={{padding:"9px 18px",borderRadius:8,border:"none",background:"#16a34a",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer"}}>➕ 추가</button>
@@ -931,7 +967,7 @@ function SiteManager({rows,setRows,members,isAdmin}) {
         </div>
       )}
 
-      {/* ── 삭제 확인 모달 ── */}
+      {/* 삭제 확인 모달 — 기존과 동일 */}
       {confirm&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200}}>
           <div style={{background:"#fff",borderRadius:16,padding:"28px",width:360,boxShadow:"0 20px 60px rgba(0,0,0,.2)",textAlign:"center"}}>
@@ -948,7 +984,6 @@ function SiteManager({rows,setRows,members,isAdmin}) {
     </div>
   );
 }
-
 /* ══════════════════════════════════════
    긴급 보고서
 ══════════════════════════════════════ */
