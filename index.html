@@ -1822,191 +1822,182 @@ function Settings({adminPw,setAdminPw,members,setMembers}) {
    메인 App — 비밀번호 로딩 버그 수정
 ══════════════════════════════════════ */
 function Overview({rows,total,done,urgCnt,delayed}) {
-  const [ovFilter, setOvFilter] = useState({status:"전체",lead:"전체",urgency:"전체"});
-  const leads=["전체",...[...new Set(rows.map(r=>r.lead).filter(Boolean))]];
-  const statuses=["전체",...STATUS_LIST];
-  const urgLabels=["전체","D-7 이내","D-14 이내","완수일 미정","완료"];
-  const filtered=rows.filter(r=>{
-    if(ovFilter.status!=="전체"&&(r.status||"예정")!==ovFilter.status)return false;
-    if(ovFilter.lead!=="전체"&&r.lead!==ovFilter.lead)return false;
-    if(ovFilter.urgency!=="전체"){
-      const d=diffDays(r.완수일);
-      if(ovFilter.urgency==="D-7 이내"&&!(d!==null&&d<=7&&r.progress<6))return false;
-      if(ovFilter.urgency==="D-14 이내"&&!(d!==null&&d<=14&&r.progress<6))return false;
-      if(ovFilter.urgency==="완수일 미정"&&r.완수일)return false;
-      if(ovFilter.urgency==="완료"&&r.progress!==6)return false;
-    }
-    return true;
-  });
-  const Chip=({label,active,onClick})=>(
-    <button onClick={onClick} style={{padding:"5px 12px",borderRadius:20,border:`1px solid ${active?"#1d4ed8":"#e5e7eb"}`,background:active?"#1d4ed8":"#fff",color:active?"#fff":"#475569",fontSize:12,fontWeight:active?700:500,cursor:"pointer",whiteSpace:"nowrap",fontFamily:"inherit"}}>
-      {label}
-    </button>
-  );
-  // 🚨 3일 이내 완수 보고서 (D-3 이하 + 지연 포함, 완료 제외)
-  const urgent3 = rows
-    .filter(r=>{
-      if(r.progress===6) return false;
-      const d=diffDays(r.완수일);
-      return d!==null && d<=3;
-    })
-    .sort((a,b)=>{
-      const da=diffDays(a.완수일), db=diffDays(b.완수일);
-      return da-db;
-    });
+  /* ── 날짜 헬퍼 (YYYY-MM-DD 문자열 비교 기반) ── */
+  const pad = n => String(n).padStart(2,"0");
+  const fmtYMD = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  const fmtMD  = d => `${d.getMonth()+1}/${d.getDate()}`;
+  const WD = ["일","월","화","수","목","금","토"];
+  const today = new Date(TODAY); today.setHours(0,0,0,0);
+  const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate()+1);
+  const isWeekend = d => d.getDay()===0 || d.getDay()===6;
+  // 다음 평일 (내일이 주말일 때만 의미가 있음)
+  const nextWorkday = (() => {
+    const d = new Date(tomorrow);
+    while(isWeekend(d)) d.setDate(d.getDate()+1);
+    return d;
+  })();
+  const tomorrowIsWeekend = isWeekend(tomorrow);
+  const showNextWorkday = tomorrowIsWeekend && fmtYMD(nextWorkday) !== fmtYMD(tomorrow);
 
-  // 📦 현장납품 예정 (납품방법=현장납품, 14일 이내, 완료 제외)
-  const siteDeliv = rows
+  /* ── 일정 타입별 색 (디자인 토큰: 달력과 통일) ── */
+  const TYPE_STYLE = {
+    survey:  {label:"현장조사",   bg:"#dbeafe", c:"#1e40af"},
+    report:  {label:"보고서 완수", bg:"#ffedd5", c:"#c2410c"},
+    deliver: {label:"납품",       bg:"#f3e8ff", c:"#7e22ce"},
+  };
+
+  /* ── 특정 날짜의 일정 카드 추출 (한 row가 여러 타입에 걸치면 각각 분리) ── */
+  const getDayItems = (dateObj) => {
+    const ymd = fmtYMD(dateObj);
+    const items = [];
+    rows.forEach(r=>{
+      if(r.현장조사===ymd) items.push({key:`${r.id}-survey`, type:"survey", row:r});
+      if(r.완수일===ymd)   items.push({key:`${r.id}-report`, type:"report", row:r});
+      if(r.납품일===ymd)   items.push({key:`${r.id}-deliver`,type:"deliver",row:r});
+    });
+    return items;
+  };
+
+  /* ── 🚨 급한 보고서 (완수일 D-7 이내, 완료 제외, 지연 포함) ── */
+  const urgent = rows
     .filter(r=>{
       if(r.progress===6) return false;
-      if((r.납품방법||"현장납품")!=="현장납품") return false;
       const d=diffDays(r.완수일);
-      return d!==null && d<=14;
+      return d!==null && d<=7;
     })
-    .sort((a,b)=>{
-      const da=diffDays(a.완수일), db=diffDays(b.완수일);
-      return da-db;
-    });
+    .sort((a,b)=>diffDays(a.완수일)-diffDays(b.완수일));
+
+  /* ── "다음 업무일" 펼침 상태 ── */
+  const [showAllNext, setShowAllNext] = useState(false);
+
+  /* ── 한눈에 보기 통계 (총건수 박스는 제거) ── */
+  const inProgress = rows.filter(r=>r.progress>0 && r.progress<6).length;
+
+  /* ── 공통 컴포넌트들 ── */
+  const ScheduleCard = ({item}) => {
+    const r = item.row;
+    const ts = TYPE_STYLE[item.type];
+    return (
+      <div style={{background:"#fff",borderRadius:14,padding:"14px 16px",boxShadow:"0 1px 3px rgba(0,0,0,.05)",marginBottom:8,display:"flex",alignItems:"center",gap:12}}>
+        <span style={{fontSize:12,fontWeight:700,padding:"4px 10px",borderRadius:8,whiteSpace:"nowrap",flexShrink:0,background:ts.bg,color:ts.c}}>{ts.label}</span>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:15,fontWeight:700,color:"#0f172a",marginBottom:3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+            {r.학교명}{r.시설명&&<span style={{fontSize:13,color:"#94a3b8",fontWeight:500}}> · {r.시설명}</span>}
+          </div>
+          <div style={{fontSize:13,color:"#475569"}}>
+            {r.지역||"-"}
+            {r.lead&&<> · <span style={{fontWeight:600,color:"#1d4ed8"}}>{r.lead}</span></>}
+          </div>
+        </div>
+      </div>
+    );
+  };
+  const EmptyDay = ({text}) => (
+    <div style={{background:"#f1f5f9",borderRadius:14,padding:18,textAlign:"center",color:"#94a3b8",fontSize:14,fontWeight:500}}>{text}</div>
+  );
+  const SecHead = ({title, count, hint, countRed}) => (
+    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,padding:"0 2px"}}>
+      <span style={{fontSize:15,fontWeight:700,color:"#0f172a"}}>{title}</span>
+      {count!=null && count>0 && <span style={{background:countRed?"#dc2626":"#1d4ed8",color:"#fff",fontSize:12,fontWeight:700,padding:"2px 9px",borderRadius:20}}>{count}건</span>}
+      {hint && <span style={{fontSize:12,color:"#94a3b8",marginLeft:"auto",fontWeight:500}}>{hint}</span>}
+    </div>
+  );
+
+  /* ── 각 섹션 데이터 ── */
+  const todayItems    = getDayItems(today);
+  const tomorrowItems = getDayItems(tomorrow);
+  const nextWdItems   = showNextWorkday ? getDayItems(nextWorkday) : [];
+  const visibleNext   = showAllNext ? nextWdItems : nextWdItems.slice(0,3);
 
   return <>
-    {/* 통계 카드 */}
-    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:12,marginBottom:20}}>
-      {[{l:"총 점검 건수",v:total,u:"건",c:"#1d4ed8"},{l:"완료",v:done,u:"건",c:"#16a34a"},{l:"D-7 이내 긴급",v:urgCnt,u:"건",c:"#f97316"},{l:"지연",v:delayed,u:"건",c:"#dc2626"}].map(k=>(
-        <div key={k.l} style={{background:"#fff",borderRadius:14,padding:"16px 18px",boxShadow:"0 1px 4px rgba(0,0,0,.07)",borderTop:`3px solid ${k.c}`}}>
-          <div style={{fontSize:11,color:"#64748b",marginBottom:5}}>{k.l}</div>
-          <div style={{fontSize:26,fontWeight:800,color:k.c}}>{k.v}<span style={{fontSize:13,fontWeight:500,color:"#94a3b8"}}>{k.u}</span></div>
-        </div>
-      ))}
+    {/* ── 날짜 줄 ── */}
+    <div style={{margin:"0 2px 22px",fontSize:13,color:"#475569",fontWeight:500}}>
+      {today.getFullYear()}년 {today.getMonth()+1}월 {today.getDate()}일 ({WD[today.getDay()]}) · 현장조사팀
     </div>
 
-    {/* 🚨 3일 이내 완수 보고서 알림 */}
-    {urgent3.length>0&&
-      <div style={{background:"linear-gradient(135deg,#fff1f2,#fff7ed)",borderRadius:14,padding:"16px 18px",boxShadow:"0 1px 4px rgba(0,0,0,.07)",border:"1px solid #fca5a5",marginBottom:16}}>
-        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
-          <span style={{fontSize:18}}>🚨</span>
-          <span style={{fontSize:14,fontWeight:800,color:"#dc2626"}}>3일 이내 완수 보고서</span>
-          <span style={{background:"#dc2626",color:"#fff",fontSize:11,padding:"2px 8px",borderRadius:20,fontWeight:700}}>{urgent3.length}건</span>
-          <span style={{fontSize:11,color:"#94a3b8",marginLeft:"auto"}}>빨리 처리하세요!</span>
-        </div>
-        <div style={{display:"flex",flexDirection:"column",gap:6}}>
-          {urgent3.map(r=>{
-            const d=diffDays(r.완수일);
-            const isOver = d<0;
-            return(
-              <div key={r.id} style={{background:"#fff",borderRadius:10,padding:"10px 14px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",borderLeft:`4px solid ${isOver?"#dc2626":d<=1?"#e11d48":"#ea580c"}`}}>
-                <div style={{flex:1,minWidth:150}}>
-                  <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
-                    <span style={{fontWeight:700,fontSize:13}}>{r.학교명}</span>
-                    {r.신규&&<span style={{background:"#dcfce7",color:"#16a34a",borderRadius:4,padding:"1px 5px",fontSize:9,fontWeight:700}}>🆕</span>}
-                    <span style={{fontSize:11,color:"#64748b"}}>· {r.시설명}</span>
-                  </div>
-                  <div style={{display:"flex",gap:8,marginTop:4,alignItems:"center",fontSize:11,color:"#64748b",flexWrap:"wrap"}}>
-                    <span>📍 {r.지역}</span>
-                    {r.lead&&<span style={{display:"flex",alignItems:"center",gap:3}}><Av name={r.lead} size={14}/>{r.lead}</span>}
-                    <span style={{color:"#ea580c",fontWeight:600}}>완수일 {r.완수일}</span>
-                  </div>
-                </div>
-                <div style={{flexShrink:0}}>
-                  <span style={{background:isOver?"#dc2626":d<=1?"#e11d48":"#ea580c",color:"#fff",borderRadius:20,padding:"4px 12px",fontWeight:800,fontSize:13}}>{dLabel(d)}</span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+    {/* ── 오늘 ── */}
+    <div style={{marginBottom:22}}>
+      <SecHead title={`오늘 · ${WD[today.getDay()]}`} count={todayItems.length} hint={todayItems.length>0?"팀 일정":null}/>
+      {todayItems.length===0
+        ? <EmptyDay text={isWeekend(today)?"주말 · 예정된 일정 없음":"오늘은 예정된 일정 없음"}/>
+        : todayItems.map(it=><ScheduleCard key={it.key} item={it}/>)}
+    </div>
+
+    {/* ── 내일 ── */}
+    <div style={{marginBottom:22}}>
+      <SecHead title={`내일 · ${WD[tomorrow.getDay()]}`} count={tomorrowItems.length} hint={tomorrowItems.length>0?"팀 일정":null}/>
+      {tomorrowItems.length===0
+        ? <EmptyDay text={tomorrowIsWeekend?"주말 · 예정된 일정 없음":"내일은 예정된 일정 없음"}/>
+        : tomorrowItems.map(it=><ScheduleCard key={it.key} item={it}/>)}
+    </div>
+
+    {/* ── 다음 업무일 (내일이 주말일 때만 표시) ── */}
+    {showNextWorkday &&
+      <div style={{marginBottom:22}}>
+        <SecHead title={`다음 업무일 · ${WD[nextWorkday.getDay()]} ${fmtMD(nextWorkday)}`} count={nextWdItems.length}/>
+        {nextWdItems.length===0
+          ? <EmptyDay text="예정된 일정 없음"/>
+          : <>
+            {visibleNext.map(it=><ScheduleCard key={it.key} item={it}/>)}
+            {nextWdItems.length>3 && !showAllNext &&
+              <button onClick={()=>setShowAllNext(true)}
+                style={{display:"block",width:"100%",textAlign:"center",fontSize:13,color:"#1d4ed8",fontWeight:600,padding:8,background:"none",border:"none",cursor:"pointer",fontFamily:"inherit"}}>
+                + 나머지 {nextWdItems.length-3}건 보기 ›
+              </button>}
+            {nextWdItems.length>3 && showAllNext &&
+              <button onClick={()=>setShowAllNext(false)}
+                style={{display:"block",width:"100%",textAlign:"center",fontSize:13,color:"#94a3b8",fontWeight:600,padding:8,background:"none",border:"none",cursor:"pointer",fontFamily:"inherit"}}>
+                접기 ▲
+              </button>}
+          </>}
       </div>
     }
 
-    {/* 📦 현장납품 예정 */}
-    {siteDeliv.length>0&&
-      <div style={{background:"#fff",borderRadius:14,padding:"16px 18px",boxShadow:"0 1px 4px rgba(0,0,0,.07)",border:"1px solid #bfdbfe",marginBottom:16}}>
-        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
-          <span style={{fontSize:18}}>📦</span>
-          <span style={{fontSize:14,fontWeight:800,color:"#1d4ed8"}}>현장납품 예정 (14일 이내)</span>
-          <span style={{background:"#1d4ed8",color:"#fff",fontSize:11,padding:"2px 8px",borderRadius:20,fontWeight:700}}>{siteDeliv.length}건</span>
-          <span style={{fontSize:11,color:"#94a3b8",marginLeft:"auto"}}>🏫 학교 방문 일정</span>
-        </div>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:8}}>
-          {siteDeliv.map(r=>{
-            const d=diffDays(r.완수일);
-            const bg = d<=3?"#fff1f2":d<=7?"#fff7ed":"#eff6ff";
-            const bc = d<=3?"#fca5a5":d<=7?"#fdba74":"#bfdbfe";
-            const cc = d<=3?"#dc2626":d<=7?"#ea580c":"#1d4ed8";
-            return(
-              <div key={r.id} style={{background:bg,borderRadius:10,padding:"10px 12px",border:`1px solid ${bc}`,display:"flex",alignItems:"center",gap:10}}>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:3}}>
-                    <span style={{fontWeight:700,fontSize:12,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.학교명}</span>
-                    {r.신규&&<span style={{background:"#dcfce7",color:"#16a34a",borderRadius:4,padding:"1px 4px",fontSize:8,fontWeight:700,flexShrink:0}}>🆕</span>}
-                  </div>
-                  <div style={{fontSize:10,color:"#64748b",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-                    📍 {r.지역} · {r.시설명}
-                  </div>
-                  <div style={{fontSize:10,color:cc,fontWeight:600,marginTop:3}}>{r.완수일}{r.lead&&` · ${r.lead}`}</div>
-                </div>
-                <span style={{background:cc,color:"#fff",borderRadius:16,padding:"3px 9px",fontWeight:800,fontSize:11,flexShrink:0,whiteSpace:"nowrap"}}>{dLabel(d)}</span>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    }
-
-    {/* 필터 */}
-    <div style={{background:"#fff",borderRadius:14,padding:"14px 16px",boxShadow:"0 1px 4px rgba(0,0,0,.07)",marginBottom:16}}>
-      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,flexWrap:"wrap"}}>
-        <span style={{fontSize:12,fontWeight:700,color:"#374151",minWidth:36}}>상태</span>
-        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-          {statuses.map(s=><Chip key={s} label={s} active={ovFilter.status===s} onClick={()=>setOvFilter(f=>({...f,status:s}))}/>)}
-        </div>
-      </div>
-      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,flexWrap:"wrap"}}>
-        <span style={{fontSize:12,fontWeight:700,color:"#374151",minWidth:36}}>담당자</span>
-        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-          {leads.map(l=><Chip key={l} label={l} active={ovFilter.lead===l} onClick={()=>setOvFilter(f=>({...f,lead:l}))}/>)}
-        </div>
-      </div>
-      <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-        <span style={{fontSize:12,fontWeight:700,color:"#374151",minWidth:36}}>긴급도</span>
-        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-          {urgLabels.map(u=><Chip key={u} label={u} active={ovFilter.urgency===u} onClick={()=>setOvFilter(f=>({...f,urgency:u}))}/>)}
-        </div>
-      </div>
-    </div>
-
-    {/* 결과 헤더 */}
-    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
-      <span style={{fontSize:13,fontWeight:700,color:"#0f172a"}}>{filtered.length}건</span>
-      {(ovFilter.status!=="전체"||ovFilter.lead!=="전체"||ovFilter.urgency!=="전체")&&
-        <button onClick={()=>setOvFilter({status:"전체",lead:"전체",urgency:"전체"})}
-          style={{fontSize:11,color:"#dc2626",background:"#fff1f2",border:"1px solid #fca5a5",borderRadius:8,padding:"3px 10px",cursor:"pointer",fontFamily:"inherit"}}>필터 초기화</button>}
-    </div>
-
-    {/* 카드 목록 */}
-    {filtered.length===0
-      ?<div style={{background:"#fff",borderRadius:14,padding:40,textAlign:"center",color:"#94a3b8",boxShadow:"0 1px 4px rgba(0,0,0,.07)"}}>조건에 맞는 현장이 없어요</div>
-      :<div style={{display:"flex",flexDirection:"column",gap:8}}>
-        {filtered.map((r)=>{
+    {/* ── 🚨 급한 보고서 (D-7 이내) ── */}
+    {urgent.length>0 &&
+      <div style={{marginBottom:22}}>
+        <SecHead title="🚨 급한 보고서" count={urgent.length} hint="완수일 D-7 이내" countRed/>
+        {urgent.map(r=>{
           const d=diffDays(r.완수일);
+          const isOver = d<0;
+          const ddBg = isOver?"#dc2626":d<=1?"#e11d48":"#f97316";
           return(
-            <div key={r.id} style={{background:"#fff",borderRadius:14,padding:"14px 18px",boxShadow:"0 1px 4px rgba(0,0,0,.07)",borderLeft:`4px solid ${urgC(d)||"#e5e7eb"}`,display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
-              <div style={{flex:1,minWidth:160}}>
-                <div style={{fontWeight:700,fontSize:13}}>{r.학교명} <span style={{fontSize:11,color:"#94a3b8",fontWeight:400}}>· {r.시설명}</span></div>
-                <div style={{display:"flex",gap:6,marginTop:6,flexWrap:"wrap",alignItems:"center"}}>
-                  <Bdg label={r.status||"예정"} bg={SS[r.status||"예정"]?.bg||"#f3f4f6"} c={SS[r.status||"예정"]?.c||"#6b7280"}/>
-                  {r.lead&&<div style={{display:"flex",alignItems:"center",gap:4}}><Av name={r.lead} size={16}/><span style={{fontSize:11,color:"#475569"}}>{r.lead}</span></div>}
+            <div key={r.id} style={{background:"linear-gradient(135deg,#fff1f2,#fff7ed)",borderRadius:14,padding:"12px 14px",marginBottom:8,display:"flex",alignItems:"center",gap:12,borderLeft:`4px solid ${isOver?"#dc2626":"#f97316"}`}}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:14,fontWeight:700,color:"#0f172a",marginBottom:3,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                  <span>{r.학교명}</span>
+                  {r.신규&&<span style={{fontSize:11,background:"#dcfce7",color:"#16a34a",borderRadius:4,padding:"1px 6px",fontWeight:700}}>NEW</span>}
+                </div>
+                <div style={{fontSize:13,color:"#475569"}}>
+                  {r.지역||"-"}
+                  {r.시설명&&` · ${r.시설명}`}
+                  {r.lead&&` · ${r.lead}`}
+                  {r.완수일&&` · ${r.완수일.slice(5).replace("-","/")}`}
                 </div>
               </div>
-              <div style={{minWidth:130}}><PBar step={r.progress||0} compact/></div>
-              <div style={{textAlign:"right",flexShrink:0}}>
-                <div style={{fontSize:10,color:"#94a3b8",marginBottom:2}}>완수일</div>
-                <div style={{fontSize:12,color:"#ea580c",fontWeight:600,marginBottom:4}}>{r.완수일||"미정"}</div>
-                <span style={{background:urgBg(d),color:urgC(d),borderRadius:20,padding:"2px 10px",fontWeight:700,fontSize:12}}>{dLabel(d)}</span>
-              </div>
+              <span style={{background:ddBg,color:"#fff",fontSize:14,fontWeight:800,padding:"6px 13px",borderRadius:20,whiteSpace:"nowrap",flexShrink:0}}>{dLabel(d)}</span>
             </div>
           );
         })}
       </div>
     }
+
+    {/* ── 한눈에 보기 (최하단 미니 통계) ── */}
+    <div style={{marginBottom:22}}>
+      <SecHead title="한눈에 보기" hint={`전체 ${total}건`}/>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
+        {[
+          {n:inProgress, l:"진행 중", c:"#1d4ed8"},
+          {n:done,       l:"완료",    c:"#16a34a"},
+          {n:delayed,    l:"지연",    c:delayed>0?"#dc2626":"#94a3b8"},
+        ].map(s=>(
+          <div key={s.l} style={{background:"#fff",borderRadius:12,padding:"14px 10px",textAlign:"center",boxShadow:"0 1px 3px rgba(0,0,0,.05)"}}>
+            <div style={{fontSize:22,fontWeight:800,color:s.c,lineHeight:1}}>{s.n}</div>
+            <div style={{fontSize:12,color:"#475569",marginTop:5,fontWeight:500}}>{s.l}</div>
+          </div>
+        ))}
+      </div>
+    </div>
   </>;
 }
 
@@ -2170,8 +2161,8 @@ function App() {
             {urgCnt>0&&!sideOpen&&<span style={{position:"absolute",top:-5,right:-5,background:"#ef4444",color:"#fff",fontSize:10,fontWeight:700,minWidth:18,height:18,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 5px",border:"2px solid #f8fafc"}}>{urgCnt}</span>}
           </button>
           <div style={{minWidth:0,flex:1}}>
-            <h1 style={{fontSize:18,fontWeight:700,margin:0}}>{tab}</h1>
-            <p style={{fontSize:11,color:"#64748b",margin:"3px 0 0"}}>현장조사팀 · 실시간 공유 중 🟢</p>
+            <h1 style={{fontSize:tab==="전체 현황"?22:18,fontWeight:tab==="전체 현황"?800:700,margin:0,lineHeight:1.15}}>{tab}</h1>
+            {tab!=="전체 현황" && <p style={{fontSize:11,color:"#64748b",margin:"3px 0 0"}}>현장조사팀 · 실시간 공유 중 🟢</p>}
           </div>
         </div>
 
