@@ -2342,129 +2342,308 @@ function Overview({rows,total,done,urgCnt,delayed}) {
 }
 
 /* ══════════════════════════════════════
-   🎨 아바타 / 내 공간
+   🎨 캐릭터 / 옷 / 방 / 내 공간
 ══════════════════════════════════════ */
-// 꾸미기 아이템 카탈로그
-const AVATAR_BG_ITEMS = [
-  {id:"bg_blue",   label:"파랑",   color:"#1d4ed8", price:20},
-  {id:"bg_red",    label:"빨강",   color:"#dc2626", price:20},
-  {id:"bg_green",  label:"초록",   color:"#16a34a", price:20},
-  {id:"bg_purple", label:"보라",   color:"#7e22ce", price:20},
-  {id:"bg_orange", label:"주황",   color:"#ea580c", price:20},
-  {id:"bg_pink",   label:"분홍",   color:"#db2777", price:20},
-  {id:"bg_cyan",   label:"민트",   color:"#0891b2", price:30},
-  {id:"bg_gold",   label:"골드",   color:"#ca8a04", price:50},
-  {id:"bg_grad1",  label:"노을",   color:"linear-gradient(135deg,#f97316,#dc2626)", price:80},
-  {id:"bg_grad2",  label:"바다",   color:"linear-gradient(135deg,#0ea5e9,#7e22ce)", price:80},
-  {id:"bg_grad3",  label:"숲",     color:"linear-gradient(135deg,#16a34a,#0891b2)", price:80},
-  {id:"bg_grad4",  label:"우주",   color:"linear-gradient(135deg,#1e1b4b,#7e22ce)", price:100},
+
+// ── DiceBear personas 옵션 카탈로그 ──
+// 머리 스타일 (10가지)
+const HAIR_STYLES = [
+  {id:"bald",          label:"민머리",  price:0},
+  {id:"shortCombover", label:"단정",    price:30},
+  {id:"shortComb",     label:"가르마",  price:30},
+  {id:"sideShave",     label:"옆깎이",  price:35},
+  {id:"buzzcut",       label:"짧은스포츠", price:30},
+  {id:"cap",           label:"캡모자",  price:50},
+  {id:"bunUndercut",   label:"올림머리", price:40},
+  {id:"pixie",         label:"단발",    price:35},
+  {id:"bobBangs",      label:"단발+앞머리", price:40},
+  {id:"longCurls",     label:"긴곱슬",  price:50},
 ];
-const AVATAR_FRAME_ITEMS = [
-  {id:"fr_none",   label:"없음",   emoji:"",   price:0},
-  {id:"fr_flower", label:"꽃",     emoji:"🌸", price:30},
-  {id:"fr_star",   label:"별",     emoji:"⭐", price:30},
-  {id:"fr_fire",   label:"불",     emoji:"🔥", price:30},
-  {id:"fr_wave",   label:"파도",   emoji:"🌊", price:30},
-  {id:"fr_tree",   label:"나무",   emoji:"🌳", price:30},
-  {id:"fr_clover", label:"클로버", emoji:"🍀", price:40},
-  {id:"fr_bolt",   label:"번개",   emoji:"⚡", price:40},
-  {id:"fr_gem",    label:"보석",   emoji:"💎", price:60},
+// 머리 색
+const HAIR_COLORS = [
+  {id:"362C28", label:"검정", color:"#362C28", price:0},
+  {id:"6C4545", label:"갈색", color:"#6C4545", price:10},
+  {id:"AC6651", label:"적갈색", color:"#AC6651", price:10},
+  {id:"E0AB58", label:"금발", color:"#E0AB58", price:15},
+  {id:"BFA5A4", label:"백금", color:"#BFA5A4", price:20},
+  {id:"E78276", label:"분홍", color:"#E78276", price:25},
+];
+// 옷 색 (옷 종류는 personas에 별도 종류 옵션이 없어 색으로 변형)
+const CLOTHING_COLORS = [
+  {id:"6dbb58", label:"녹색셔츠", color:"#6dbb58", price:50},
+  {id:"54d7c7", label:"민트셔츠", color:"#54d7c7", price:50},
+  {id:"456dff", label:"파랑셔츠", color:"#456dff", price:50},
+  {id:"7555ca", label:"보라셔츠", color:"#7555ca", price:50},
+  {id:"e24553", label:"빨강셔츠", color:"#e24553", price:50},
+  {id:"f3b63a", label:"노랑셔츠", color:"#f3b63a", price:50},
+  {id:"f55d81", label:"분홍셔츠", color:"#f55d81", price:50},
+  {id:"222222", label:"검정셔츠", color:"#222222", price:60},
+];
+// 안경 / 표정
+const EYE_OPTIONS = [
+  {id:"open",       label:"기본 눈",  price:0},
+  {id:"happy",      label:"웃는 눈",  price:0},
+  {id:"wink",       label:"윙크",     price:15},
+  {id:"sleep",      label:"감은 눈",  price:15},
+  {id:"glasses",    label:"안경",     price:25},
+  {id:"sunglasses", label:"선글라스", price:35},
+];
+// 수염
+const FACIAL_HAIR = [
+  {id:"none",          label:"없음",  price:0},
+  {id:"beardMustache", label:"턱수염", price:20},
+  {id:"goatee",        label:"염소수염", price:20},
+  {id:"pyramid",       label:"피라미드", price:20},
+  {id:"shadow",        label:"그림자", price:15},
+  {id:"soulPatch",     label:"입술수염", price:15},
+  {id:"walrus",        label:"바다코끼리", price:25},
+];
+// 피부색 (한 번 무료 선택)
+const SKIN_TONES = [
+  {id:"623d36", label:"진갈색", color:"#623d36"},
+  {id:"92594b", label:"갈색",   color:"#92594b"},
+  {id:"b16a5b", label:"중간",   color:"#b16a5b"},
+  {id:"d78774", label:"밝은",   color:"#d78774"},
+  {id:"e7a08e", label:"연한",   color:"#e7a08e"},
+  {id:"f8b9a8", label:"창백",   color:"#f8b9a8"},
 ];
 
-// 아바타 표시 (배경, 프레임 적용)
-function AvatarDisplay({name, data, size=40, isAdmin=false}) {
+// ── 가구 카탈로그 (방에 배치) ──
+const FURNITURE = [
+  // 가구
+  {id:"chair",   emoji:"🪑", label:"의자",   price:20,  cat:"furn"},
+  {id:"bed",     emoji:"🛏️", label:"침대",   price:60,  cat:"furn"},
+  {id:"sofa",    emoji:"🛋️", label:"소파",   price:80,  cat:"furn"},
+  {id:"desk",    emoji:"🪑", label:"책상",   price:40,  cat:"furn"},
+  {id:"book",    emoji:"📚", label:"책장",   price:35,  cat:"furn"},
+  {id:"tv",      emoji:"📺", label:"TV",    price:70,  cat:"furn"},
+  {id:"lamp",    emoji:"💡", label:"램프",   price:25,  cat:"furn"},
+  {id:"clock",   emoji:"🕰️", label:"시계",   price:30,  cat:"furn"},
+  // 식물 / 인테리어
+  {id:"plant",   emoji:"🪴", label:"화분",   price:20,  cat:"deco"},
+  {id:"tree",    emoji:"🌳", label:"나무",   price:30,  cat:"deco"},
+  {id:"frame",   emoji:"🖼️", label:"그림",   price:35,  cat:"deco"},
+  {id:"mirror",  emoji:"🪞", label:"거울",   price:30,  cat:"deco"},
+  {id:"flower",  emoji:"🌸", label:"꽃",     price:15,  cat:"deco"},
+  {id:"candle",  emoji:"🕯️", label:"양초",   price:10,  cat:"deco"},
+  // 펫
+  {id:"dog",     emoji:"🐶", label:"강아지", price:100, cat:"pet"},
+  {id:"cat",     emoji:"🐱", label:"고양이", price:100, cat:"pet"},
+  {id:"hamster", emoji:"🐹", label:"햄스터", price:60,  cat:"pet"},
+  {id:"fish",    emoji:"🐠", label:"물고기", price:50,  cat:"pet"},
+  {id:"rabbit",  emoji:"🐰", label:"토끼",   price:80,  cat:"pet"},
+  // 음식 / 재미
+  {id:"cake",    emoji:"🎂", label:"케이크", price:40,  cat:"fun"},
+  {id:"pizza",   emoji:"🍕", label:"피자",   price:30,  cat:"fun"},
+  {id:"coffee",  emoji:"☕", label:"커피",   price:15,  cat:"fun"},
+  {id:"game",    emoji:"🎮", label:"게임기", price:50,  cat:"fun"},
+  {id:"music",   emoji:"🎵", label:"음표",   price:20,  cat:"fun"},
+  {id:"trophy",  emoji:"🏆", label:"트로피", price:80,  cat:"fun"},
+];
+
+// 벽지 / 바닥
+const WALLPAPERS = [
+  {id:"cream",   label:"크림",   color:"#fff7e6", price:0},
+  {id:"sky",     label:"하늘",   color:"#e0f2fe", price:30},
+  {id:"mint",    label:"민트",   color:"#d1fae5", price:30},
+  {id:"pink",    label:"분홍",   color:"#fce7f3", price:30},
+  {id:"purple",  label:"보라",   color:"#ede9fe", price:30},
+  {id:"sunset",  label:"노을",   color:"linear-gradient(180deg,#fed7aa,#fbcfe8)", price:80},
+  {id:"galaxy",  label:"우주",   color:"linear-gradient(180deg,#1e1b4b,#7e22ce)", price:120},
+];
+const FLOORS = [
+  {id:"wood",    label:"원목",   color:"#f5e6c8", price:0},
+  {id:"darkwood",label:"진한원목", color:"#a8754b", price:30},
+  {id:"tile",    label:"타일",   color:"#e2e8f0", price:30},
+  {id:"grass",   label:"잔디",   color:"#bbf7d0", price:50},
+  {id:"carpet",  label:"카펫",   color:"#fda4af", price:50},
+];
+
+// ── DiceBear URL 생성 ──
+const buildAvatarUrl = (data, opts = {}) => {
+  const seed = (opts.seed || data?.charSeed || data?.name || "user")+"";
+  const params = new URLSearchParams();
+  params.set("seed", seed);
+  if(data?.skinColor)      params.set("skinColor", data.skinColor);
+  if(data?.hair)           params.set("hair", data.hair);
+  if(data?.hairColor)      params.set("hairColor", data.hairColor);
+  if(data?.eyes)           params.set("eyes", data.eyes);
+  if(data?.facialHair && data.facialHair!=="none") params.set("facialHair", data.facialHair);
+  if(data?.clothingColor)  params.set("clothingColor", data.clothingColor);
+  // 배경 투명 (방에 올릴 때)
+  if(opts.transparentBg) params.set("backgroundColor", "transparent");
+  return `https://api.dicebear.com/9.x/personas/svg?${params.toString()}`;
+};
+
+// ── 캐릭터 표시 (DiceBear 그림 + fallback) ──
+function AvatarDisplay({name, data, size=40, isAdmin=false, transparentBg=false}) {
   const d = data || {};
-  const bgItem = AVATAR_BG_ITEMS.find(i=>i.id===d.equippedBg);
-  const frameItem = AVATAR_FRAME_ITEMS.find(i=>i.id===d.equippedFrame);
-  const bgStyle = bgItem ? bgItem.color : (isAdmin?"#f97316":(MC[name]||"#1d4ed8"));
+  // 캐릭터 데이터가 있으면 DiceBear, 없으면 (구 시스템) 이니셜
+  const hasChar = d.charSeed || d.hair || d.hairColor || d.skinColor || d.eyes || d.clothingColor;
+  if(!hasChar){
+    // 구 fallback: 이니셜 원형
+    return(
+      <div style={{width:size,height:size,borderRadius:"50%",background:isAdmin?"#f97316":(MC[name]||"#1d4ed8"),color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:size*0.42,fontWeight:700,border:"2px solid #fff",boxShadow:"0 1px 3px rgba(0,0,0,0.15)",flexShrink:0}}>{name?name[0]:"?"}</div>
+    );
+  }
   return(
-    <div style={{position:"relative",width:size,height:size,flexShrink:0}}>
-      <div style={{
-        width:size,height:size,borderRadius:"50%",
-        background:bgStyle,
-        color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",
-        fontSize:size*0.42,fontWeight:700,
-        border:"2px solid #fff",boxShadow:"0 1px 3px rgba(0,0,0,0.15)"
-      }}>{name?name[0]:"?"}</div>
-      {frameItem&&frameItem.emoji&&
-        <span style={{position:"absolute",bottom:-2,right:-2,fontSize:size*0.4,filter:"drop-shadow(0 1px 2px rgba(0,0,0,0.3))",lineHeight:1}}>{frameItem.emoji}</span>}
+    <img src={buildAvatarUrl({...d,name},{transparentBg})} alt={name}
+      style={{width:size,height:size,borderRadius:transparentBg?0:"50%",background:transparentBg?"transparent":"#f1f5f9",border:transparentBg?"none":"2px solid #fff",boxShadow:transparentBg?"none":"0 1px 3px rgba(0,0,0,0.15)",flexShrink:0,objectFit:"contain"}}/>
+  );
+}
+
+// ── 작은 방 표시 ──
+function MiniRoom({userData, ownerName}) {
+  const wp = WALLPAPERS.find(w=>w.id===(userData?.wallpaper||"cream"))||WALLPAPERS[0];
+  const fl = FLOORS.find(f=>f.id===(userData?.floor||"wood"))||FLOORS[0];
+  const placedItems = userData?.roomItems || []; // [{itemId, x, y}]
+
+  return(
+    <div style={{position:"relative",width:"100%",aspectRatio:"1/0.85",borderRadius:14,overflow:"hidden",border:"2px solid #e2e8f0",background:"#fff"}}>
+      {/* 벽 */}
+      <div style={{position:"absolute",top:0,left:0,right:0,height:"60%",background:wp.color}}/>
+      {/* 바닥 */}
+      <div style={{position:"absolute",bottom:0,left:0,right:0,height:"40%",background:fl.color}}/>
+      {/* 창문 */}
+      <div style={{position:"absolute",left:"8%",top:"10%",width:"22%",height:"28%",background:"linear-gradient(180deg,#bae6fd,#fef3c7)",border:"3px solid #92400e",borderRadius:4}}>
+        <div style={{position:"absolute",left:"50%",top:0,bottom:0,width:2,background:"#92400e",transform:"translateX(-50%)"}}/>
+        <div style={{position:"absolute",top:"50%",left:0,right:0,height:2,background:"#92400e",transform:"translateY(-50%)"}}/>
+      </div>
+      {/* 캐릭터 */}
+      <img src={buildAvatarUrl({...userData,name:ownerName},{transparentBg:true})} alt={ownerName}
+        style={{position:"absolute",left:"50%",bottom:"15%",transform:"translateX(-50%)",width:"38%",height:"auto",pointerEvents:"none"}}/>
+      {/* 배치된 가구 */}
+      {placedItems.map((p,i)=>{
+        const item = FURNITURE.find(f=>f.id===p.itemId);
+        if(!item) return null;
+        return(
+          <div key={i} style={{position:"absolute",left:`${p.x}%`,top:`${p.y}%`,fontSize:30,lineHeight:1,transform:"translate(-50%,-50%)",pointerEvents:"none"}}>
+            {item.emoji}
+          </div>
+        );
+      })}
+      {placedItems.length===0&&!userData?.charSeed&&!userData?.hair&&
+        <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",color:"#94a3b8",fontSize:13,fontWeight:600,background:"rgba(255,255,255,0.6)"}}>아직 빈 방이에요</div>}
+    </div>
+  );
+}
+
+// ── 캐릭터 미리보기 (큰 사이즈) ──
+function CharPreview({userData, name, size=160}) {
+  return(
+    <div style={{width:size,height:size,borderRadius:"50%",background:"#f1f5f9",overflow:"hidden",border:"3px solid #fff",boxShadow:"0 4px 12px rgba(0,0,0,0.1)",flexShrink:0}}>
+      <img src={buildAvatarUrl({...userData,name})} alt={name} style={{width:"100%",height:"100%"}}/>
     </div>
   );
 }
 
 function MyPage({targetName, isOwn, userData, rows, addPoints}) {
-  const [tab,setTab] = useState("home"); // home | shop
-  const [shopCat,setShopCat] = useState("bg"); // bg | frame
+  const [tab,setTab] = useState("home"); // home | wear | shop | room
+  const [shopCat,setShopCat] = useState("hair"); // hair | hairColor | clothing | eyes | facialHair | furn | wallpaper
   const [statusInput,setStatusInput] = useState(userData.statusMsg||"");
   const [savedMsg,setSavedMsg] = useState("");
+  const [skinPickerOpen,setSkinPickerOpen] = useState(false);
   useEffect(()=>{ setStatusInput(userData.statusMsg||""); },[targetName,userData.statusMsg]);
 
   const points = userData.points||0;
-  const ownedBg = userData.ownedBg || [];
-  const ownedFrame = userData.ownedFrame || ["fr_none"]; // 기본은 "없음" 보유
-  const equippedBg = userData.equippedBg || null;
-  const equippedFrame = userData.equippedFrame || "fr_none";
+  const owned = {
+    hair: userData.ownedHair || ["bald","shortCombover","pixie"], // 기본 무료 3종
+    hairColor: userData.ownedHairColor || ["362C28"], // 검정 기본
+    clothing: userData.ownedClothing || [],
+    eyes: userData.ownedEyes || ["open","happy"],
+    facialHair: userData.ownedFacialHair || ["none"],
+    furn: userData.ownedFurn || [],
+    wallpaper: userData.ownedWallpaper || ["cream"],
+    floor: userData.ownedFloor || ["wood"],
+  };
+  const equipped = {
+    hair: userData.hair || "shortCombover",
+    hairColor: userData.hairColor || "362C28",
+    clothingColor: userData.clothingColor || null,
+    eyes: userData.eyes || "open",
+    facialHair: userData.facialHair || "none",
+    skinColor: userData.skinColor || null,
+  };
   const attendStreak = userData.attendStreak || 0;
+  const skinChosen = !!userData.skinColor;
 
-  // 내 통계 계산
+  // 통계
   const myRows = rows.filter(r=>r.lead===targetName);
   const myDone = myRows.filter(r=>r.progress===6).length;
   const myInProg = myRows.filter(r=>r.progress<6).length;
 
-  const buyItem = (item, cat) => {
+  const update = (patch) => db.ref(`users/${targetName}`).update(patch);
+
+  const buyItem = (item, cat, fieldKey) => {
     if(!isOwn) return;
     if(points < item.price){ alert("포인트가 부족해요"); return; }
-    const ownedKey = cat==="bg" ? "ownedBg" : "ownedFrame";
-    const owned = userData[ownedKey] || [];
-    if(owned.includes(item.id)){ alert("이미 구매한 아이템이에요"); return; }
+    const ownedKey = "owned"+cat[0].toUpperCase()+cat.slice(1);
+    const ownedList = userData[ownedKey] || owned[cat] || [];
+    if(ownedList.includes(item.id)){ alert("이미 구매한 아이템이에요"); return; }
     if(!confirm(`${item.label} 아이템을 ${item.price}p에 구매하시겠어요?\n현재 ${points}p → ${points-item.price}p`)) return;
-    db.ref(`users/${targetName}`).update({
+    update({
       points: points - item.price,
-      [ownedKey]: [...owned, item.id],
+      [ownedKey]: [...ownedList, item.id],
     });
   };
-  const equipItem = (id, cat) => {
-    if(!isOwn) return;
-    const key = cat==="bg" ? "equippedBg" : "equippedFrame";
-    db.ref(`users/${targetName}`).update({[key]: id});
-  };
-  const unequipBg = () => {
-    if(!isOwn) return;
-    db.ref(`users/${targetName}`).update({equippedBg: null});
-  };
+  const equipItem = (id, fieldKey) => { if(isOwn) update({[fieldKey]: id}); };
+  const unequip = (fieldKey) => { if(isOwn) update({[fieldKey]: null}); };
+  const setSkin = (id) => { if(isOwn){ update({skinColor: id}); setSkinPickerOpen(false); } };
   const saveStatus = () => {
     if(!isOwn) return;
-    db.ref(`users/${targetName}`).update({statusMsg: statusInput.trim().slice(0,40)});
-    setSavedMsg("저장됐어요");
-    setTimeout(()=>setSavedMsg(""),1500);
+    update({statusMsg: statusInput.trim().slice(0,40)});
+    setSavedMsg("저장됐어요"); setTimeout(()=>setSavedMsg(""),1500);
+  };
+
+  // 방 — 가구 추가/제거
+  const placeItemInRoom = (itemId) => {
+    if(!isOwn) return;
+    const cur = userData.roomItems || [];
+    if(cur.length>=12){ alert("방이 가득 찼어요 (최대 12개)"); return; }
+    if(cur.some(p=>p.itemId===itemId)){ alert("이미 방에 있어요"); return; }
+    // 랜덤 위치
+    const x = 25 + Math.random()*50;
+    const y = 50 + Math.random()*30;
+    update({roomItems: [...cur, {itemId, x, y}]});
+  };
+  const removeFromRoom = (itemId) => {
+    if(!isOwn) return;
+    const cur = userData.roomItems || [];
+    update({roomItems: cur.filter(p=>p.itemId!==itemId)});
   };
 
   return(
     <div style={{display:"flex",flexDirection:"column",gap:16}}>
-      {/* 프로필 헤더 카드 */}
+      {/* 프로필 헤더 */}
       <div style={{background:"linear-gradient(135deg,#1e293b,#0f172a)",borderRadius:14,padding:"22px 20px",color:"#fff",display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
-        <AvatarDisplay name={targetName} data={userData} size={72}/>
+        <CharPreview userData={userData} name={targetName} size={100}/>
         <div style={{flex:1,minWidth:200}}>
           <div style={{fontSize:20,fontWeight:800,marginBottom:4}}>{targetName}{isOwn&&<span style={{fontSize:12,color:"#94a3b8",marginLeft:8,fontWeight:500}}>· 내 공간</span>}</div>
           {userData.statusMsg && !isOwn &&
             <div style={{fontSize:13,color:"#cbd5e1",marginBottom:8}}>💬 {userData.statusMsg}</div>}
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-            <span style={{background:"rgba(251,191,36,0.2)",color:"#fbbf24",fontSize:12,fontWeight:700,padding:"4px 10px",borderRadius:14}}>🪙 {points}p</span>
-            {attendStreak>0&&<span style={{background:"rgba(34,197,94,0.2)",color:"#4ade80",fontSize:12,fontWeight:700,padding:"4px 10px",borderRadius:14}}>🔥 {attendStreak}일 연속 출석</span>}
+            {isOwn&&<span style={{background:"rgba(251,191,36,0.2)",color:"#fbbf24",fontSize:12,fontWeight:700,padding:"4px 10px",borderRadius:14}}>🪙 {points}p</span>}
+            {attendStreak>0&&<span style={{background:"rgba(34,197,94,0.2)",color:"#4ade80",fontSize:12,fontWeight:700,padding:"4px 10px",borderRadius:14}}>🔥 {attendStreak}일 연속</span>}
+            <span style={{background:"rgba(99,102,241,0.2)",color:"#a5b4fc",fontSize:12,fontWeight:700,padding:"4px 10px",borderRadius:14}}>📁 담당 {myRows.length}건</span>
           </div>
         </div>
       </div>
 
-      {/* 본인일 때만 탭 */}
-      {isOwn && <div style={{display:"flex",background:"#fff",borderRadius:12,padding:4,border:"1px solid #e2e8f0"}}>
-        <button onClick={()=>setTab("home")}
-          style={{flex:1,padding:"10px",fontSize:13.5,fontWeight:600,border:"none",borderRadius:9,cursor:"pointer",fontFamily:"inherit",background:tab==="home"?"#0f172a":"transparent",color:tab==="home"?"#fff":"#94a3b8"}}>🏠 홈</button>
-        <button onClick={()=>setTab("shop")}
-          style={{flex:1,padding:"10px",fontSize:13.5,fontWeight:600,border:"none",borderRadius:9,cursor:"pointer",fontFamily:"inherit",background:tab==="shop"?"#0f172a":"transparent",color:tab==="shop"?"#fff":"#94a3b8"}}>🛍 상점</button>
+      {/* 본인일 때 탭 */}
+      {isOwn && <div style={{display:"flex",background:"#fff",borderRadius:12,padding:4,border:"1px solid #e2e8f0",overflowX:"auto",scrollbarWidth:"none"}}>
+        {[{k:"home",l:"🏠 홈"},{k:"wear",l:"👔 꾸미기"},{k:"shop",l:"🛍 상점"},{k:"room",l:"🏡 방"}].map(t=>(
+          <button key={t.k} onClick={()=>setTab(t.k)}
+            style={{flex:1,minWidth:80,padding:"10px",fontSize:13,fontWeight:600,border:"none",borderRadius:9,cursor:"pointer",fontFamily:"inherit",background:tab===t.k?"#0f172a":"transparent",color:tab===t.k?"#fff":"#94a3b8",whiteSpace:"nowrap"}}>{t.l}</button>
+        ))}
       </div>}
 
       {(!isOwn||tab==="home")&&<>
-        {/* 상태 메시지 (본인만 편집) */}
+        {/* 다른 사람 보기 — 그 사람의 방 */}
+        {!isOwn && <div style={{background:"#fff",borderRadius:12,padding:14,boxShadow:"0 1px 3px rgba(0,0,0,0.05)"}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#0f172a",marginBottom:10}}>🏡 {targetName}님의 방</div>
+          <MiniRoom userData={userData} ownerName={targetName}/>
+        </div>}
+
         {isOwn&&<div style={{background:"#fff",borderRadius:12,padding:16,boxShadow:"0 1px 3px rgba(0,0,0,0.05)"}}>
           <div style={{fontSize:13,fontWeight:700,color:"#0f172a",marginBottom:8}}>💬 한 줄 상태 (40자)</div>
           <div style={{display:"flex",gap:8}}>
@@ -2473,33 +2652,6 @@ function MyPage({targetName, isOwn, userData, rows, addPoints}) {
             <button onClick={saveStatus} style={{padding:"10px 16px",borderRadius:10,border:"none",background:"#1d4ed8",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>저장</button>
           </div>
           {savedMsg&&<div style={{fontSize:11,color:"#16a34a",marginTop:6,fontWeight:600}}>✅ {savedMsg}</div>}
-        </div>}
-
-        {/* 보유 아이템 — 본인일 때만 장착/해제 가능 */}
-        {isOwn&&<div style={{background:"#fff",borderRadius:12,padding:16,boxShadow:"0 1px 3px rgba(0,0,0,0.05)"}}>
-          <div style={{fontSize:13,fontWeight:700,color:"#0f172a",marginBottom:10}}>🎨 보유 아이템</div>
-          <div style={{fontSize:11.5,color:"#64748b",marginBottom:10,fontWeight:600}}>배경</div>
-          <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:14}}>
-            <button onClick={unequipBg} style={{padding:"8px 12px",borderRadius:10,border:`1.5px solid ${!equippedBg?"#1d4ed8":"#e2e8f0"}`,background:!equippedBg?"#eff6ff":"#fff",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>기본</button>
-            {AVATAR_BG_ITEMS.filter(i=>ownedBg.includes(i.id)).map(i=>(
-              <button key={i.id} onClick={()=>equipItem(i.id,"bg")}
-                style={{padding:"6px",borderRadius:10,border:`1.5px solid ${equippedBg===i.id?"#1d4ed8":"#e2e8f0"}`,background:"#fff",cursor:"pointer",display:"flex",alignItems:"center",gap:6,fontFamily:"inherit"}}>
-                <span style={{width:22,height:22,borderRadius:"50%",background:i.color,display:"inline-block"}}/>
-                <span style={{fontSize:11.5,color:"#475569",fontWeight:600,paddingRight:6}}>{i.label}</span>
-              </button>
-            ))}
-            {ownedBg.length===0&&<span style={{fontSize:12,color:"#94a3b8",alignSelf:"center"}}>상점에서 구매하세요</span>}
-          </div>
-          <div style={{fontSize:11.5,color:"#64748b",marginBottom:10,fontWeight:600}}>프레임</div>
-          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-            {AVATAR_FRAME_ITEMS.filter(i=>ownedFrame.includes(i.id)).map(i=>(
-              <button key={i.id} onClick={()=>equipItem(i.id,"frame")}
-                style={{padding:"6px 10px",borderRadius:10,border:`1.5px solid ${equippedFrame===i.id?"#1d4ed8":"#e2e8f0"}`,background:"#fff",cursor:"pointer",display:"flex",alignItems:"center",gap:6,fontFamily:"inherit"}}>
-                <span style={{fontSize:14}}>{i.emoji||"⚪"}</span>
-                <span style={{fontSize:11.5,color:"#475569",fontWeight:600}}>{i.label}</span>
-              </button>
-            ))}
-          </div>
         </div>}
 
         {/* 통계 */}
@@ -2521,7 +2673,6 @@ function MyPage({targetName, isOwn, userData, rows, addPoints}) {
           </div>
         </div>
 
-        {/* 본인일 때 포인트 적립 안내 */}
         {isOwn&&<div style={{background:"#fffbeb",borderRadius:12,padding:14,border:"1px solid #fde68a"}}>
           <div style={{fontSize:13,fontWeight:700,color:"#92400e",marginBottom:8}}>🪙 포인트 적립 방법</div>
           <div style={{fontSize:12.5,color:"#78350f",lineHeight:1.7}}>
@@ -2533,41 +2684,182 @@ function MyPage({targetName, isOwn, userData, rows, addPoints}) {
         </div>}
       </>}
 
-      {isOwn&&tab==="shop"&&<>
-        <div style={{display:"flex",background:"#fff",borderRadius:12,padding:4,border:"1px solid #e2e8f0"}}>
-          <button onClick={()=>setShopCat("bg")} style={{flex:1,padding:"9px",fontSize:13,fontWeight:600,border:"none",borderRadius:9,cursor:"pointer",fontFamily:"inherit",background:shopCat==="bg"?"#1d4ed8":"transparent",color:shopCat==="bg"?"#fff":"#475569"}}>🎨 배경</button>
-          <button onClick={()=>setShopCat("frame")} style={{flex:1,padding:"9px",fontSize:13,fontWeight:600,border:"none",borderRadius:9,cursor:"pointer",fontFamily:"inherit",background:shopCat==="frame"?"#1d4ed8":"transparent",color:shopCat==="frame"?"#fff":"#475569"}}>✨ 프레임</button>
-        </div>
-
+      {/* 꾸미기 탭 — 보유 아이템에서 선택 */}
+      {isOwn&&tab==="wear"&&<div style={{display:"flex",flexDirection:"column",gap:12}}>
+        {/* 피부색 */}
         <div style={{background:"#fff",borderRadius:12,padding:16,boxShadow:"0 1px 3px rgba(0,0,0,0.05)"}}>
-          <div style={{fontSize:12,color:"#64748b",marginBottom:12}}>현재 보유 <strong style={{color:"#fbbf24"}}>🪙 {points}p</strong></div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(110px,1fr))",gap:10}}>
-            {(shopCat==="bg"?AVATAR_BG_ITEMS:AVATAR_FRAME_ITEMS.filter(i=>i.id!=="fr_none")).map(item=>{
-              const ownedKey = shopCat==="bg" ? "ownedBg" : "ownedFrame";
-              const owned = (userData[ownedKey]||[]).includes(item.id);
-              const canAfford = points >= item.price;
-              return(
-                <div key={item.id} style={{background:"#f8fafc",borderRadius:10,padding:12,textAlign:"center",border:`1px solid ${owned?"#86efac":"#e2e8f0"}`}}>
-                  {shopCat==="bg" ? (
-                    <div style={{width:50,height:50,borderRadius:"50%",background:item.color,margin:"0 auto 8px",border:"2px solid #fff",boxShadow:"0 1px 3px rgba(0,0,0,0.1)"}}/>
-                  ) : (
-                    <div style={{fontSize:36,marginBottom:6}}>{item.emoji}</div>
-                  )}
-                  <div style={{fontSize:12.5,fontWeight:700,color:"#0f172a",marginBottom:4}}>{item.label}</div>
-                  {owned ? (
-                    <div style={{fontSize:11,color:"#16a34a",fontWeight:700}}>✓ 보유 중</div>
-                  ) : (
-                    <button onClick={()=>buyItem(item,shopCat)} disabled={!canAfford}
-                      style={{width:"100%",padding:"6px",borderRadius:8,border:"none",background:canAfford?"#1d4ed8":"#cbd5e1",color:"#fff",fontSize:11.5,fontWeight:700,cursor:canAfford?"pointer":"not-allowed",fontFamily:"inherit"}}>
-                      🪙 {item.price}p
-                    </button>
-                  )}
-                </div>
-              );
-            })}
+          <div style={{fontSize:13,fontWeight:700,color:"#0f172a",marginBottom:10,display:"flex",alignItems:"center",gap:6}}>
+            🧑 피부색 {!skinChosen&&<span style={{fontSize:10,background:"#dcfce7",color:"#16a34a",padding:"2px 7px",borderRadius:8}}>처음 한 번 무료</span>}
+          </div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            {SKIN_TONES.map(s=>(
+              <button key={s.id} onClick={()=>setSkin(s.id)}
+                style={{padding:6,borderRadius:10,border:`2px solid ${equipped.skinColor===s.id?"#1d4ed8":"#e2e8f0"}`,background:"#fff",cursor:"pointer",display:"flex",alignItems:"center",gap:6,fontFamily:"inherit"}}>
+                <span style={{width:22,height:22,borderRadius:"50%",background:s.color,display:"inline-block",border:"1px solid #e2e8f0"}}/>
+                <span style={{fontSize:11.5,color:"#475569",fontWeight:600,paddingRight:6}}>{s.label}</span>
+              </button>
+            ))}
           </div>
         </div>
-      </>}
+
+        {/* 머리 스타일 */}
+        <WearGroup title="💇 머리" items={HAIR_STYLES} ownedIds={owned.hair} equippedId={equipped.hair} onEquip={id=>equipItem(id,"hair")} renderPreview={i=>i.label}/>
+        {/* 머리 색 */}
+        <WearGroup title="🎨 머리색" items={HAIR_COLORS} ownedIds={owned.hairColor} equippedId={equipped.hairColor} onEquip={id=>equipItem(id,"hairColor")} renderPreview={i=>(<span style={{width:24,height:24,borderRadius:"50%",background:i.color,display:"inline-block",border:"1px solid #e2e8f0"}}/>)}/>
+        {/* 옷 색 */}
+        <WearGroup title="👔 옷" items={[{id:"none",label:"기본",color:null,price:0},...CLOTHING_COLORS]} ownedIds={["none",...owned.clothing]} equippedId={equipped.clothingColor||"none"} onEquip={id=>equipItem(id==="none"?null:id,"clothingColor")} renderPreview={i=>i.color?<span style={{width:24,height:24,borderRadius:6,background:i.color,display:"inline-block",border:"1px solid #e2e8f0"}}/>:i.label}/>
+        {/* 눈 / 안경 */}
+        <WearGroup title="👀 눈/안경" items={EYE_OPTIONS} ownedIds={owned.eyes} equippedId={equipped.eyes} onEquip={id=>equipItem(id,"eyes")} renderPreview={i=>i.label}/>
+        {/* 수염 */}
+        <WearGroup title="🧔 수염" items={FACIAL_HAIR} ownedIds={owned.facialHair} equippedId={equipped.facialHair} onEquip={id=>equipItem(id,"facialHair")} renderPreview={i=>i.label}/>
+      </div>}
+
+      {/* 상점 */}
+      {isOwn&&tab==="shop"&&<div style={{display:"flex",flexDirection:"column",gap:12}}>
+        <div style={{display:"flex",gap:6,overflowX:"auto",scrollbarWidth:"none",paddingBottom:4}}>
+          {[
+            {k:"hair",l:"💇 머리"},
+            {k:"hairColor",l:"🎨 머리색"},
+            {k:"clothing",l:"👔 옷"},
+            {k:"eyes",l:"👀 눈"},
+            {k:"facialHair",l:"🧔 수염"},
+            {k:"furn",l:"🪑 가구"},
+            {k:"wallpaper",l:"🏠 방"},
+          ].map(c=>(
+            <button key={c.k} onClick={()=>setShopCat(c.k)}
+              style={{padding:"8px 14px",fontSize:12.5,fontWeight:600,borderRadius:20,border:"none",background:shopCat===c.k?"#1d4ed8":"#fff",color:shopCat===c.k?"#fff":"#475569",cursor:"pointer",whiteSpace:"nowrap",fontFamily:"inherit",border:"1px solid #e2e8f0"}}>{c.l}</button>
+          ))}
+        </div>
+        <div style={{background:"#fff",borderRadius:12,padding:16,boxShadow:"0 1px 3px rgba(0,0,0,0.05)"}}>
+          <div style={{fontSize:12,color:"#64748b",marginBottom:12}}>현재 보유 <strong style={{color:"#fbbf24"}}>🪙 {points}p</strong></div>
+          <ShopList cat={shopCat} userData={userData} owned={owned} buyItem={buyItem} points={points}/>
+        </div>
+      </div>}
+
+      {/* 방 탭 */}
+      {isOwn&&tab==="room"&&<div style={{display:"flex",flexDirection:"column",gap:12}}>
+        <div style={{background:"#fff",borderRadius:12,padding:14,boxShadow:"0 1px 3px rgba(0,0,0,0.05)"}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#0f172a",marginBottom:10}}>🏡 내 방</div>
+          <MiniRoom userData={userData} ownerName={targetName}/>
+          <div style={{fontSize:11,color:"#94a3b8",marginTop:8}}>최대 12개 가구 배치 가능</div>
+        </div>
+        {/* 벽지 / 바닥 변경 */}
+        <div style={{background:"#fff",borderRadius:12,padding:14,boxShadow:"0 1px 3px rgba(0,0,0,0.05)"}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#0f172a",marginBottom:10}}>🖼 벽지</div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:14}}>
+            {WALLPAPERS.filter(w=>owned.wallpaper.includes(w.id)).map(w=>(
+              <button key={w.id} onClick={()=>update({wallpaper:w.id})}
+                style={{padding:6,borderRadius:10,border:`2px solid ${(userData.wallpaper||"cream")===w.id?"#1d4ed8":"#e2e8f0"}`,background:"#fff",cursor:"pointer",display:"flex",alignItems:"center",gap:6,fontFamily:"inherit"}}>
+                <span style={{width:22,height:22,borderRadius:6,background:w.color,display:"inline-block",border:"1px solid #e2e8f0"}}/>
+                <span style={{fontSize:11.5,color:"#475569",fontWeight:600,paddingRight:6}}>{w.label}</span>
+              </button>
+            ))}
+          </div>
+          <div style={{fontSize:13,fontWeight:700,color:"#0f172a",marginBottom:10}}>⬜ 바닥</div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            {FLOORS.filter(f=>owned.floor.includes(f.id)).map(f=>(
+              <button key={f.id} onClick={()=>update({floor:f.id})}
+                style={{padding:6,borderRadius:10,border:`2px solid ${(userData.floor||"wood")===f.id?"#1d4ed8":"#e2e8f0"}`,background:"#fff",cursor:"pointer",display:"flex",alignItems:"center",gap:6,fontFamily:"inherit"}}>
+                <span style={{width:22,height:22,borderRadius:6,background:f.color,display:"inline-block",border:"1px solid #e2e8f0"}}/>
+                <span style={{fontSize:11.5,color:"#475569",fontWeight:600,paddingRight:6}}>{f.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+        {/* 가구 배치 */}
+        <div style={{background:"#fff",borderRadius:12,padding:14,boxShadow:"0 1px 3px rgba(0,0,0,0.05)"}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#0f172a",marginBottom:10}}>📦 보유 가구</div>
+          {owned.furn.length===0
+            ?<div style={{fontSize:12.5,color:"#94a3b8",padding:"14px 0",textAlign:"center"}}>상점에서 가구를 사보세요</div>
+            :<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(80px,1fr))",gap:8}}>
+              {FURNITURE.filter(f=>owned.furn.includes(f.id)).map(f=>{
+                const placed = (userData.roomItems||[]).some(p=>p.itemId===f.id);
+                return(
+                  <button key={f.id} onClick={()=>placed?removeFromRoom(f.id):placeItemInRoom(f.id)}
+                    style={{padding:"10px 6px",borderRadius:10,border:`1.5px solid ${placed?"#16a34a":"#e2e8f0"}`,background:placed?"#f0fdf4":"#fff",cursor:"pointer",fontFamily:"inherit",textAlign:"center"}}>
+                    <div style={{fontSize:24,marginBottom:3}}>{f.emoji}</div>
+                    <div style={{fontSize:10.5,color:"#475569",fontWeight:600}}>{f.label}</div>
+                    <div style={{fontSize:9,color:placed?"#16a34a":"#94a3b8",marginTop:2,fontWeight:700}}>{placed?"방에 있음 ✓":"방에 놓기"}</div>
+                  </button>
+                );
+              })}
+            </div>}
+        </div>
+      </div>}
+    </div>
+  );
+}
+
+// 꾸미기 탭의 한 그룹
+function WearGroup({title, items, ownedIds, equippedId, onEquip, renderPreview}) {
+  return(
+    <div style={{background:"#fff",borderRadius:12,padding:16,boxShadow:"0 1px 3px rgba(0,0,0,0.05)"}}>
+      <div style={{fontSize:13,fontWeight:700,color:"#0f172a",marginBottom:10}}>{title}</div>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        {items.filter(i=>ownedIds.includes(i.id)).map(i=>(
+          <button key={i.id} onClick={()=>onEquip(i.id)}
+            style={{padding:"6px 10px",borderRadius:10,border:`2px solid ${equippedId===i.id?"#1d4ed8":"#e2e8f0"}`,background:equippedId===i.id?"#eff6ff":"#fff",cursor:"pointer",display:"flex",alignItems:"center",gap:8,fontFamily:"inherit"}}>
+            {typeof renderPreview(i)==="string"
+              ?<span style={{fontSize:12,color:"#475569",fontWeight:600}}>{renderPreview(i)}</span>
+              :renderPreview(i)}
+          </button>
+        ))}
+        {items.filter(i=>ownedIds.includes(i.id)).length===0&&
+          <span style={{fontSize:12,color:"#94a3b8",alignSelf:"center"}}>상점에서 구매하세요</span>}
+      </div>
+    </div>
+  );
+}
+
+// 상점 카테고리별 아이템 표시
+function ShopList({cat, userData, owned, buyItem, points}) {
+  const catalog = {
+    hair:       {items:HAIR_STYLES,    ownedKey:"hair",       previewType:"text"},
+    hairColor:  {items:HAIR_COLORS,    ownedKey:"hairColor",  previewType:"color"},
+    clothing:   {items:CLOTHING_COLORS,ownedKey:"clothing",   previewType:"color"},
+    eyes:       {items:EYE_OPTIONS,    ownedKey:"eyes",       previewType:"text"},
+    facialHair: {items:FACIAL_HAIR.filter(f=>f.id!=="none"),ownedKey:"facialHair", previewType:"text"},
+    furn:       {items:FURNITURE,      ownedKey:"furn",       previewType:"emoji"},
+    wallpaper:  {items:[...WALLPAPERS,...FLOORS],ownedKey:"wallpaper", previewType:"color"},
+  }[cat];
+  if(!catalog) return null;
+
+  return(
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(110px,1fr))",gap:10}}>
+      {catalog.items.map(item=>{
+        // wallpaper는 섞여 있어서 두 번째 ownedKey도 체크
+        let isOwned = (owned[catalog.ownedKey]||[]).includes(item.id);
+        if(cat==="wallpaper"){
+          isOwned = (owned.wallpaper||[]).includes(item.id) || (owned.floor||[]).includes(item.id);
+        }
+        const canAfford = points >= item.price;
+        return(
+          <div key={item.id} style={{background:"#f8fafc",borderRadius:10,padding:12,textAlign:"center",border:`1px solid ${isOwned?"#86efac":"#e2e8f0"}`}}>
+            {catalog.previewType==="emoji"&&<div style={{fontSize:36,marginBottom:6,lineHeight:1}}>{item.emoji}</div>}
+            {catalog.previewType==="color"&&<div style={{width:50,height:50,borderRadius:cat==="clothing"?8:"50%",background:item.color,margin:"0 auto 8px",border:"2px solid #fff",boxShadow:"0 1px 3px rgba(0,0,0,0.1)"}}/>}
+            {catalog.previewType==="text"&&<div style={{fontSize:11,color:"#94a3b8",marginBottom:8,padding:"14px 4px",background:"#e2e8f0",borderRadius:8,fontWeight:600}}>미리보기</div>}
+            <div style={{fontSize:12.5,fontWeight:700,color:"#0f172a",marginBottom:4}}>{item.label}</div>
+            {isOwned ? (
+              <div style={{fontSize:11,color:"#16a34a",fontWeight:700}}>✓ 보유 중</div>
+            ) : item.price===0 ? (
+              <div style={{fontSize:11,color:"#94a3b8",fontWeight:700}}>기본 제공</div>
+            ) : (
+              <button onClick={()=>{
+                // wallpaper 카테고리는 floor 와 분리해서 처리
+                if(cat==="wallpaper"){
+                  const isFloor = FLOORS.some(f=>f.id===item.id);
+                  buyItem(item, isFloor?"floor":"wallpaper");
+                } else {
+                  buyItem(item, catalog.ownedKey);
+                }
+              }} disabled={!canAfford}
+                style={{width:"100%",padding:"6px",borderRadius:8,border:"none",background:canAfford?"#1d4ed8":"#cbd5e1",color:"#fff",fontSize:11.5,fontWeight:700,cursor:canAfford?"pointer":"not-allowed",fontFamily:"inherit"}}>
+                🪙 {item.price}p
+              </button>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
