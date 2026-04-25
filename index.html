@@ -2346,27 +2346,38 @@ function Overview({rows,total,done,urgCnt,delayed}) {
 ══════════════════════════════════════ */
 
 // ── DiceBear personas 옵션 카탈로그 ──
-// 머리 스타일 (10가지)
+// 머리 스타일 (DiceBear personas 공식 값 사용)
 const HAIR_STYLES = [
-  {id:"bald",          label:"민머리",  price:0},
-  {id:"shortCombover", label:"단정",    price:30},
-  {id:"shortComb",     label:"가르마",  price:30},
-  {id:"sideShave",     label:"옆깎이",  price:35},
-  {id:"buzzcut",       label:"짧은스포츠", price:30},
-  {id:"cap",           label:"캡모자",  price:50},
-  {id:"bunUndercut",   label:"올림머리", price:40},
-  {id:"pixie",         label:"단발",    price:35},
-  {id:"bobBangs",      label:"단발+앞머리", price:40},
-  {id:"longCurls",     label:"긴곱슬",  price:50},
+  {id:"bald",               label:"민머리",      price:0},
+  {id:"shortCombover",      label:"단정 (남)",    price:30},
+  {id:"shortComboverChops", label:"가르마 (남)",  price:35},
+  {id:"buzzcut",            label:"스포츠 컷",   price:30},
+  {id:"fade",               label:"투블럭",      price:35},
+  {id:"sideShave",          label:"옆깎이",      price:35},
+  {id:"mohawk",             label:"모히칸",      price:40},
+  {id:"balding",            label:"숱 적은",     price:25},
+  {id:"bobCut",             label:"단발",        price:35},
+  {id:"bobBangs",           label:"단발+앞머리", price:40},
+  {id:"long",               label:"긴 생머리",   price:45},
+  {id:"extraLong",          label:"매우 긴 머리", price:50},
+  {id:"curly",              label:"곱슬",        price:45},
+  {id:"curlyBun",           label:"곱슬 묶음",   price:50},
+  {id:"curlyHighTop",       label:"높은 곱슬",   price:55},
+  {id:"bunUndercut",        label:"올림머리",    price:45},
+  {id:"straightBun",        label:"단정 묶음",   price:40},
+  {id:"pigtails",           label:"양갈래",      price:50},
+  {id:"beanie",             label:"비니",        price:60},
+  {id:"cap",                label:"모자",        price:60},
 ];
-// 머리 색
+// 머리 색 (DiceBear 공식 hex 사용)
 const HAIR_COLORS = [
-  {id:"362C28", label:"검정", color:"#362C28", price:0},
-  {id:"6C4545", label:"갈색", color:"#6C4545", price:10},
-  {id:"AC6651", label:"적갈색", color:"#AC6651", price:10},
-  {id:"E0AB58", label:"금발", color:"#E0AB58", price:15},
-  {id:"BFA5A4", label:"백금", color:"#BFA5A4", price:20},
-  {id:"E78276", label:"분홍", color:"#E78276", price:25},
+  {id:"362c47", label:"검정",   color:"#362c47", price:0},
+  {id:"6c4545", label:"갈색",   color:"#6c4545", price:10},
+  {id:"e15c66", label:"붉은",   color:"#e15c66", price:15},
+  {id:"e16381", label:"분홍빛", color:"#e16381", price:20},
+  {id:"f27d65", label:"적갈색", color:"#f27d65", price:15},
+  {id:"f29c65", label:"오렌지", color:"#f29c65", price:20},
+  {id:"dee1f5", label:"백금",   color:"#dee1f5", price:25},
 ];
 // 옷 색 (옷 종류는 personas에 별도 종류 옵션이 없어 색으로 변형)
 const CLOTHING_COLORS = [
@@ -2398,14 +2409,15 @@ const FACIAL_HAIR = [
   {id:"soulPatch",     label:"입술수염", price:15},
   {id:"walrus",        label:"바다코끼리", price:25},
 ];
-// 피부색 (한 번 무료 선택)
+// 피부색 (DiceBear 공식값)
 const SKIN_TONES = [
   {id:"623d36", label:"진갈색", color:"#623d36"},
   {id:"92594b", label:"갈색",   color:"#92594b"},
   {id:"b16a5b", label:"중간",   color:"#b16a5b"},
   {id:"d78774", label:"밝은",   color:"#d78774"},
-  {id:"e7a08e", label:"연한",   color:"#e7a08e"},
-  {id:"f8b9a8", label:"창백",   color:"#f8b9a8"},
+  {id:"e5a07e", label:"연한",   color:"#e5a07e"},
+  {id:"e7a391", label:"분홍빛", color:"#e7a391"},
+  {id:"eeb4a4", label:"창백",   color:"#eeb4a4"},
 ];
 
 // ── 가구 카탈로그 (방에 배치) ──
@@ -2547,8 +2559,8 @@ function MyPage({targetName, isOwn, userData, rows, addPoints}) {
 
   const points = userData.points||0;
   const owned = {
-    hair: userData.ownedHair || ["bald","shortCombover","pixie"], // 기본 무료 3종
-    hairColor: userData.ownedHairColor || ["362C28"], // 검정 기본
+    hair: userData.ownedHair || ["bald","shortCombover","bobCut"], // 기본 무료 3종
+    hairColor: userData.ownedHairColor || ["362c47"], // 검정 기본
     clothing: userData.ownedClothing || [],
     eyes: userData.ownedEyes || ["open","happy"],
     facialHair: userData.ownedFacialHair || ["none"],
@@ -2558,7 +2570,7 @@ function MyPage({targetName, isOwn, userData, rows, addPoints}) {
   };
   const equipped = {
     hair: userData.hair || "shortCombover",
-    hairColor: userData.hairColor || "362C28",
+    hairColor: userData.hairColor || "362c47",
     clothingColor: userData.clothingColor || null,
     eyes: userData.eyes || "open",
     facialHair: userData.facialHair || "none",
@@ -2703,15 +2715,15 @@ function MyPage({targetName, isOwn, userData, rows, addPoints}) {
         </div>
 
         {/* 머리 스타일 */}
-        <WearGroup title="💇 머리" items={HAIR_STYLES} ownedIds={owned.hair} equippedId={equipped.hair} onEquip={id=>equipItem(id,"hair")} renderPreview={i=>i.label}/>
+        <WearGroup title="💇 머리" items={HAIR_STYLES} ownedIds={owned.hair} equippedId={equipped.hair} onEquip={id=>equipItem(id,"hair")} userData={userData} previewKey="hair" renderPreview={i=>i.label}/>
         {/* 머리 색 */}
-        <WearGroup title="🎨 머리색" items={HAIR_COLORS} ownedIds={owned.hairColor} equippedId={equipped.hairColor} onEquip={id=>equipItem(id,"hairColor")} renderPreview={i=>(<span style={{width:24,height:24,borderRadius:"50%",background:i.color,display:"inline-block",border:"1px solid #e2e8f0"}}/>)}/>
+        <WearGroup title="🎨 머리색" items={HAIR_COLORS} ownedIds={owned.hairColor} equippedId={equipped.hairColor} onEquip={id=>equipItem(id,"hairColor")} userData={userData} previewKey="hairColor" renderPreview={i=>(<span style={{width:24,height:24,borderRadius:"50%",background:i.color,display:"inline-block",border:"1px solid #e2e8f0"}}/>)}/>
         {/* 옷 색 */}
         <WearGroup title="👔 옷" items={[{id:"none",label:"기본",color:null,price:0},...CLOTHING_COLORS]} ownedIds={["none",...owned.clothing]} equippedId={equipped.clothingColor||"none"} onEquip={id=>equipItem(id==="none"?null:id,"clothingColor")} renderPreview={i=>i.color?<span style={{width:24,height:24,borderRadius:6,background:i.color,display:"inline-block",border:"1px solid #e2e8f0"}}/>:i.label}/>
         {/* 눈 / 안경 */}
-        <WearGroup title="👀 눈/안경" items={EYE_OPTIONS} ownedIds={owned.eyes} equippedId={equipped.eyes} onEquip={id=>equipItem(id,"eyes")} renderPreview={i=>i.label}/>
+        <WearGroup title="👀 눈/안경" items={EYE_OPTIONS} ownedIds={owned.eyes} equippedId={equipped.eyes} onEquip={id=>equipItem(id,"eyes")} userData={userData} previewKey="eyes" renderPreview={i=>i.label}/>
         {/* 수염 */}
-        <WearGroup title="🧔 수염" items={FACIAL_HAIR} ownedIds={owned.facialHair} equippedId={equipped.facialHair} onEquip={id=>equipItem(id,"facialHair")} renderPreview={i=>i.label}/>
+        <WearGroup title="🧔 수염" items={FACIAL_HAIR} ownedIds={owned.facialHair} equippedId={equipped.facialHair} onEquip={id=>equipItem(id,"facialHair")} userData={userData} previewKey="facialHair" renderPreview={i=>i.label}/>
       </div>}
 
       {/* 상점 */}
@@ -2791,21 +2803,35 @@ function MyPage({targetName, isOwn, userData, rows, addPoints}) {
 }
 
 // 꾸미기 탭의 한 그룹
-function WearGroup({title, items, ownedIds, equippedId, onEquip, renderPreview}) {
+function WearGroup({title, items, ownedIds, equippedId, onEquip, renderPreview, userData, previewKey}) {
+  // 캐릭터 미리보기 URL 빌더
+  const buildPreviewUrl = (item) => {
+    if(!previewKey) return null;
+    const previewData = {...userData};
+    previewData[previewKey] = item.id;
+    return buildAvatarUrl({...previewData, name:userData.name||"preview"});
+  };
   return(
     <div style={{background:"#fff",borderRadius:12,padding:16,boxShadow:"0 1px 3px rgba(0,0,0,0.05)"}}>
       <div style={{fontSize:13,fontWeight:700,color:"#0f172a",marginBottom:10}}>{title}</div>
-      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-        {items.filter(i=>ownedIds.includes(i.id)).map(i=>(
-          <button key={i.id} onClick={()=>onEquip(i.id)}
-            style={{padding:"6px 10px",borderRadius:10,border:`2px solid ${equippedId===i.id?"#1d4ed8":"#e2e8f0"}`,background:equippedId===i.id?"#eff6ff":"#fff",cursor:"pointer",display:"flex",alignItems:"center",gap:8,fontFamily:"inherit"}}>
-            {typeof renderPreview(i)==="string"
-              ?<span style={{fontSize:12,color:"#475569",fontWeight:600}}>{renderPreview(i)}</span>
-              :renderPreview(i)}
-          </button>
-        ))}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(85px,1fr))",gap:8}}>
+        {items.filter(i=>ownedIds.includes(i.id)).map(i=>{
+          const previewUrl = buildPreviewUrl(i);
+          return(
+            <button key={i.id} onClick={()=>onEquip(i.id)}
+              style={{padding:"8px 6px",borderRadius:10,border:`2px solid ${equippedId===i.id?"#1d4ed8":"#e2e8f0"}`,background:equippedId===i.id?"#eff6ff":"#fff",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:5,fontFamily:"inherit"}}>
+              {previewUrl
+                ? <img src={previewUrl} alt={i.label} style={{width:48,height:48,borderRadius:"50%",background:"#f1f5f9"}}/>
+                : (typeof renderPreview(i)==="string"
+                    ? <span style={{fontSize:11,color:"#475569",fontWeight:600,minHeight:48,display:"flex",alignItems:"center"}}>{renderPreview(i)}</span>
+                    : <div>{renderPreview(i)}</div>)
+              }
+              <span style={{fontSize:10.5,color:"#475569",fontWeight:600,textAlign:"center"}}>{i.label}</span>
+            </button>
+          );
+        })}
         {items.filter(i=>ownedIds.includes(i.id)).length===0&&
-          <span style={{fontSize:12,color:"#94a3b8",alignSelf:"center"}}>상점에서 구매하세요</span>}
+          <span style={{fontSize:12,color:"#94a3b8",alignSelf:"center",gridColumn:"1/-1"}}>상점에서 구매하세요</span>}
       </div>
     </div>
   );
@@ -2814,20 +2840,29 @@ function WearGroup({title, items, ownedIds, equippedId, onEquip, renderPreview})
 // 상점 카테고리별 아이템 표시
 function ShopList({cat, userData, owned, buyItem, points}) {
   const catalog = {
-    hair:       {items:HAIR_STYLES,    ownedKey:"hair",       previewType:"text"},
-    hairColor:  {items:HAIR_COLORS,    ownedKey:"hairColor",  previewType:"color"},
+    hair:       {items:HAIR_STYLES,    ownedKey:"hair",       previewType:"char",  previewKey:"hair"},
+    hairColor:  {items:HAIR_COLORS,    ownedKey:"hairColor",  previewType:"char",  previewKey:"hairColor"},
     clothing:   {items:CLOTHING_COLORS,ownedKey:"clothing",   previewType:"color"},
-    eyes:       {items:EYE_OPTIONS,    ownedKey:"eyes",       previewType:"text"},
-    facialHair: {items:FACIAL_HAIR.filter(f=>f.id!=="none"),ownedKey:"facialHair", previewType:"text"},
+    eyes:       {items:EYE_OPTIONS,    ownedKey:"eyes",       previewType:"char",  previewKey:"eyes"},
+    facialHair: {items:FACIAL_HAIR.filter(f=>f.id!=="none"),ownedKey:"facialHair", previewType:"char", previewKey:"facialHair"},
     furn:       {items:FURNITURE,      ownedKey:"furn",       previewType:"emoji"},
     wallpaper:  {items:[...WALLPAPERS,...FLOORS],ownedKey:"wallpaper", previewType:"color"},
   }[cat];
   if(!catalog) return null;
 
+  // 미리보기용: 현재 사용자의 기본 모습에 해당 옵션만 바꿔서 보여줌
+  const buildPreviewUrl = (item) => {
+    const previewData = {...userData};
+    if(catalog.previewKey==="hair"){ previewData.hair = item.id; }
+    else if(catalog.previewKey==="hairColor"){ previewData.hairColor = item.id; }
+    else if(catalog.previewKey==="eyes"){ previewData.eyes = item.id; }
+    else if(catalog.previewKey==="facialHair"){ previewData.facialHair = item.id; }
+    return buildAvatarUrl({...previewData,name:userData.name||"preview"});
+  };
+
   return(
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(110px,1fr))",gap:10}}>
       {catalog.items.map(item=>{
-        // wallpaper는 섞여 있어서 두 번째 ownedKey도 체크
         let isOwned = (owned[catalog.ownedKey]||[]).includes(item.id);
         if(cat==="wallpaper"){
           isOwned = (owned.wallpaper||[]).includes(item.id) || (owned.floor||[]).includes(item.id);
@@ -2837,7 +2872,10 @@ function ShopList({cat, userData, owned, buyItem, points}) {
           <div key={item.id} style={{background:"#f8fafc",borderRadius:10,padding:12,textAlign:"center",border:`1px solid ${isOwned?"#86efac":"#e2e8f0"}`}}>
             {catalog.previewType==="emoji"&&<div style={{fontSize:36,marginBottom:6,lineHeight:1}}>{item.emoji}</div>}
             {catalog.previewType==="color"&&<div style={{width:50,height:50,borderRadius:cat==="clothing"?8:"50%",background:item.color,margin:"0 auto 8px",border:"2px solid #fff",boxShadow:"0 1px 3px rgba(0,0,0,0.1)"}}/>}
-            {catalog.previewType==="text"&&<div style={{fontSize:11,color:"#94a3b8",marginBottom:8,padding:"14px 4px",background:"#e2e8f0",borderRadius:8,fontWeight:600}}>미리보기</div>}
+            {catalog.previewType==="char"&&
+              <img src={buildPreviewUrl(item)} alt={item.label}
+                style={{width:60,height:60,borderRadius:"50%",background:"#f1f5f9",margin:"0 auto 6px",border:"2px solid #fff",boxShadow:"0 1px 3px rgba(0,0,0,0.1)",display:"block"}}/>
+            }
             <div style={{fontSize:12.5,fontWeight:700,color:"#0f172a",marginBottom:4}}>{item.label}</div>
             {isOwned ? (
               <div style={{fontSize:11,color:"#16a34a",fontWeight:700}}>✓ 보유 중</div>
@@ -2845,7 +2883,6 @@ function ShopList({cat, userData, owned, buyItem, points}) {
               <div style={{fontSize:11,color:"#94a3b8",fontWeight:700}}>기본 제공</div>
             ) : (
               <button onClick={()=>{
-                // wallpaper 카테고리는 floor 와 분리해서 처리
                 if(cat==="wallpaper"){
                   const isFloor = FLOORS.some(f=>f.id===item.id);
                   buyItem(item, isFloor?"floor":"wallpaper");
