@@ -281,8 +281,98 @@ function Login({onLogin,adminPw,members}) {
 }
 
 /* ══════════════════════════════════════
-   현장 관리 (수정·삭제·엑셀출력 포함)
+   📅 달력 시트 파싱 헬퍼 (4월달력/5월달력 등)
 ══════════════════════════════════════ */
+// 한 줄이 학교 이름인지 (인원 줄과 구분)
+const isSchoolLine = (text) => {
+  if(!text) return false;
+  const t = String(text).trim();
+  return /(초|중|고|학교|유치원|대학교)(\(|\/|\s|$|-|\d)/.test(t);
+};
+
+// 인원 줄에서 한국어 이름들만 추출 ("3팀(이름1,이름2)" → ["이름1","이름2"])
+const extractNames = (text) => {
+  if(!text) return [];
+  const t = String(text).replace(/[()\/]/g, ",");
+  const tokens = t.split(",").map(s=>s.trim()).filter(Boolean);
+  const out = [];
+  tokens.forEach(tok=>{
+    if(/^\d팀$/.test(tok)) return; // "1팀","2팀" 같은 팀명 제외
+    const clean = tok.replace(/(이사님|사장님|소장님|부장님|과장님|팀장님)$/,"").trim();
+    if(/^[가-힣]{2,4}$/.test(clean)) out.push(clean);
+  });
+  return out;
+};
+
+// 학교 줄 텍스트에서 학교명 추출 ("시흥신일초(동2/소옹1)-신규(3팀)" → "시흥신일초")
+const extractSchoolName = (raw) => {
+  const base = String(raw).split("(")[0].trim();
+  const m = base.match(/^(.+?(?:초|중|고|학교|유치원|대학교))/);
+  return m ? m[1] : null;
+};
+
+// 두 학교명이 같은지 (정확/확장 매칭)
+const schoolMatches = (calName, mainName) => {
+  if(!calName || !mainName) return false;
+  if(calName === mainName) return true;
+  // "...초" → "...초등학교"
+  let expanded = calName;
+  if(calName.endsWith("초")) expanded = calName + "등학교";
+  else if(calName.endsWith("중")) expanded = calName + "학교";
+  else if(calName.endsWith("고")) expanded = calName + "등학교";
+  if(expanded === mainName) return true;
+  // 부분 포함
+  if(calName.length>=3 && mainName.includes(calName)) return true;
+  if(mainName.length>=3 && calName.includes(mainName)) return true;
+  return false;
+};
+
+// 시트 이름이 "N월달력" 형식인지
+const isCalendarSheet = (name) => /^\d{1,2}월달력$/.test(String(name||"").trim());
+
+// 달력 시트에서 일정 추출 — XLSX 워크시트 객체와 시트 이름을 받음
+const parseCalendarSheet = (ws, sheetName) => {
+  // SheetJS의 ws는 {A1: {v:..,t:..}, ...} 형식. range 가져오기
+  const range = XLSX.utils.decode_range(ws["!ref"]||"A1:A1");
+  const records = [];
+  for(let r=range.s.r; r<=range.e.r; r++){
+    for(let c=range.s.c; c<=range.e.c && c<11; c++){
+      const cell = ws[XLSX.utils.encode_cell({r,c})];
+      if(!cell) continue;
+      // 날짜 셀? (Excel serial date 또는 Date 객체)
+      let dateObj = null;
+      if(cell.t==="n" && cell.v>40000 && cell.v<50000){
+        // Excel serial date
+        const ds = XLSX.SSF.parse_date_code(cell.v);
+        if(ds) dateObj = new Date(ds.y, ds.m-1, ds.d);
+      } else if(cell.t==="d" && cell.v instanceof Date){
+        dateObj = cell.v;
+      }
+      if(!dateObj) continue;
+      const yr = dateObj.getFullYear();
+      const mo = dateObj.getMonth()+1;
+      if(yr<2024 || yr>2030) continue;
+      // 같은 컬럼에서 r+1, r+2 ... 학교/인원 페어 찾기
+      for(let off=1; off<10; off++){
+        const cellSchool = ws[XLSX.utils.encode_cell({r:r+off, c})];
+        if(!cellSchool || !cellSchool.v) continue;
+        const sv = String(cellSchool.v).trim();
+        if(!isSchoolLine(sv)) continue;
+        // 다음 줄 = 인원
+        const cellPeople = ws[XLSX.utils.encode_cell({r:r+off+1, c})];
+        let peopleRaw = "";
+        if(cellPeople && cellPeople.v && !isSchoolLine(cellPeople.v)){
+          peopleRaw = String(cellPeople.v).trim();
+        }
+        const dateKey = `${yr}-${String(mo).padStart(2,"0")}-${String(dateObj.getDate()).padStart(2,"0")}`;
+        records.push({date:dateKey, schoolRaw:sv, peopleRaw, names:extractNames(peopleRaw)});
+      }
+    }
+  }
+  return records;
+};
+
+
 function SiteManager({rows,setRows,members,isAdmin,addPoints,userName}) {
   const fileRef=useRef();
   const [search,  setSearch] =useState("");
@@ -526,6 +616,104 @@ function SiteManager({rows,setRows,members,isAdmin,addPoints,userName}) {
     e.target.value="";
   };
 
+  // 🔄 달력 시트(4월달력/5월달력 등)에서 현장인원 자동 매칭
+  const calFileRef = useRef();
+  const [calPreview, setCalPreview] = useState(null);
+  const handleCalFile = e => {
+    const file = e.target.files[0];
+    if(!file){ showToast("⚠️ 파일이 선택되지 않았어요","delete"); return; }
+    const ext = file.name.toLowerCase().split('.').pop();
+    if(!["xlsx","xls"].includes(ext)){ showToast("⚠️ xlsx 파일만 가능","delete"); e.target.value=""; return; }
+    showToast("📤 달력 시트 분석 중...");
+    const reader = new FileReader();
+    reader.onerror = ()=>showToast("❌ 파일 읽기 실패","delete");
+    reader.onload = ev => {
+      try{
+        const wb = XLSX.read(ev.target.result, {type:"array", cellDates:true});
+        const calSheets = wb.SheetNames.filter(isCalendarSheet);
+        if(calSheets.length===0){
+          showToast("⚠️ 'N월달력' 시트를 찾지 못했어요","delete"); return;
+        }
+        // 모든 달력 시트에서 일정 추출
+        let allRecords = [];
+        calSheets.forEach(sn=>{
+          const ws = wb.Sheets[sn];
+          const recs = parseCalendarSheet(ws, sn);
+          allRecords = allRecords.concat(recs);
+        });
+        // 중복 제거 (같은 날짜+학교)
+        const seen = new Set();
+        const unique = [];
+        allRecords.forEach(rec=>{
+          const k = rec.date + "|" + rec.schoolRaw.slice(0,30);
+          if(!seen.has(k)){ seen.add(k); unique.push(rec); }
+        });
+        // 현재 사이트 데이터(rows)와 매칭
+        // rows의 학교 + 현장조사 날짜와, 달력의 학교 + 날짜 매칭
+        const matches = [];
+        const unmatched = [];
+        unique.forEach(rec=>{
+          const calSchoolName = extractSchoolName(rec.schoolRaw);
+          if(!calSchoolName){ unmatched.push(rec); return; }
+          // rows에서 학교명 + 현장조사 날짜가 모두 일치하는 행 찾기
+          const matchedRows = rows.filter(r=>{
+            if(r.현장조사 !== rec.date) return false;
+            return schoolMatches(calSchoolName, r.학교명);
+          });
+          if(matchedRows.length>0){
+            matchedRows.forEach(mr=>{
+              matches.push({
+                rowId: mr.id,
+                school: mr.학교명,
+                date: rec.date,
+                names: rec.names,
+                facility: mr.시설명,
+                region: mr.지역,
+                calRaw: rec.schoolRaw,
+              });
+            });
+          } else {
+            unmatched.push(rec);
+          }
+        });
+        setCalPreview({
+          totalCalendar: unique.length,
+          matched: matches,
+          unmatched: unmatched.slice(0,15),
+          unmatchedCount: unmatched.length,
+          sheetsFound: calSheets,
+        });
+        showToast(`✅ ${matches.length}건 매칭 (전체 ${unique.length}건)`);
+      } catch(err){
+        console.error("달력 파싱 오류:", err);
+        showToast(`❌ 파싱 오류: ${err.message}`,"delete");
+      }
+    };
+    try{ reader.readAsArrayBuffer(file); }
+    catch(err){ showToast(`❌ 파일 읽기 실패: ${err.message}`,"delete"); }
+    e.target.value="";
+  };
+
+  // 미리보기 → 실제 적용
+  const applyCalendarMatches = () => {
+    if(!calPreview || calPreview.matched.length===0) return;
+    if(!confirm(`${calPreview.matched.length}건의 현장에 인원 정보를 추가합니다.\n적용할까요?`)) return;
+    // rowId → names 매핑 (같은 row가 여러 매칭일 경우 합치기)
+    const byRow = {};
+    calPreview.matched.forEach(m=>{
+      if(!byRow[m.rowId]) byRow[m.rowId] = new Set();
+      m.names.forEach(n=>byRow[m.rowId].add(n));
+    });
+    const updated = rows.map(r=>{
+      if(byRow[r.id]) return {...r, 현장참여: Array.from(byRow[r.id])};
+      return r;
+    });
+    setRows(updated);
+    fbRows(updated);
+    setCalPreview(null);
+    showToast(`✅ ${Object.keys(byRow).length}개 현장에 인원 정보 등록 완료`);
+  };
+
   const filtered=rows.filter(r=>{
     const p=r.progress||0;
     if(viewMode==="progress"&&p>=6)return false;
@@ -642,6 +830,11 @@ function SiteManager({rows,setRows,members,isAdmin,addPoints,userName}) {
           <button onClick={()=>fileRef.current.click()}
             style={{padding:"7px 14px",borderRadius:8,border:"none",background:"#1d4ed8",color:"#fff",fontSize:12,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>📤 엑셀 업로드</button>
           <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleFile} style={{display:"none"}}/>
+          {isAdmin && <>
+            <button onClick={()=>calFileRef.current.click()}
+              style={{padding:"7px 14px",borderRadius:8,border:"1px solid #7c3aed",background:"#f5f3ff",color:"#7c3aed",fontSize:12,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>📅 현장인원 동기화</button>
+            <input ref={calFileRef} type="file" accept=".xlsx,.xls" onChange={handleCalFile} style={{display:"none"}}/>
+          </>}
         </div>
       </div>
       <div style={{fontSize:12,color:"#64748b"}}>
@@ -871,6 +1064,69 @@ function SiteManager({rows,setRows,members,isAdmin,addPoints,userName}) {
         </table>
       </div>
       )}
+
+      {/* 📅 달력 시트 매칭 미리보기 모달 */}
+      {calPreview && <div onClick={()=>setCalPreview(null)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:60,display:"flex",alignItems:"center",justifyContent:"center",padding:14}}>
+        <div onClick={e=>e.stopPropagation()} style={{background:"#fff",borderRadius:14,padding:18,maxWidth:520,width:"100%",maxHeight:"85vh",overflowY:"auto"}}>
+          <div style={{fontSize:16,fontWeight:800,marginBottom:6,color:"#0f172a"}}>📅 현장인원 동기화 미리보기</div>
+          <div style={{fontSize:12,color:"#64748b",marginBottom:14}}>
+            {calPreview.sheetsFound.join(", ")} 시트 분석 · 총 일정 {calPreview.totalCalendar}건
+          </div>
+
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14}}>
+            <div style={{background:"#f0fdf4",borderRadius:10,padding:"10px 12px",border:"1px solid #86efac"}}>
+              <div style={{fontSize:11,color:"#16a34a",fontWeight:600}}>매칭됨</div>
+              <div style={{fontSize:22,fontWeight:800,color:"#16a34a"}}>{calPreview.matched.length}</div>
+            </div>
+            <div style={{background:"#fef2f2",borderRadius:10,padding:"10px 12px",border:"1px solid #fca5a5"}}>
+              <div style={{fontSize:11,color:"#dc2626",fontWeight:600}}>매칭 실패</div>
+              <div style={{fontSize:22,fontWeight:800,color:"#dc2626"}}>{calPreview.unmatchedCount}</div>
+            </div>
+          </div>
+
+          {calPreview.matched.length>0 && <div style={{marginBottom:14}}>
+            <div style={{fontSize:13,fontWeight:700,marginBottom:6}}>✅ 적용될 매칭</div>
+            <div style={{maxHeight:240,overflowY:"auto",border:"1px solid #e2e8f0",borderRadius:10}}>
+              {calPreview.matched.map((m,i)=>(
+                <div key={i} style={{padding:"9px 12px",borderBottom:i<calPreview.matched.length-1?"1px solid #f1f5f9":"none",fontSize:12.5}}>
+                  <div style={{display:"flex",gap:8,marginBottom:3,flexWrap:"wrap"}}>
+                    <span style={{color:"#1d4ed8",fontWeight:700}}>{m.date}</span>
+                    <span style={{fontWeight:700}}>{m.school}</span>
+                    {m.facility && <span style={{color:"#64748b"}}>· {m.facility}</span>}
+                  </div>
+                  <div style={{color:"#475569",paddingLeft:2}}>
+                    {m.names.length>0 ? `👥 ${m.names.join(", ")}` : <span style={{color:"#94a3b8"}}>(인원 정보 없음)</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>}
+
+          {calPreview.unmatched.length>0 && <details style={{marginBottom:14}}>
+            <summary style={{fontSize:13,fontWeight:600,color:"#dc2626",cursor:"pointer",padding:"6px 0"}}>❌ 매칭 실패 {calPreview.unmatchedCount}건 (펼치기)</summary>
+            <div style={{maxHeight:160,overflowY:"auto",border:"1px solid #fecaca",borderRadius:10,marginTop:6,background:"#fff5f5"}}>
+              {calPreview.unmatched.map((u,i)=>(
+                <div key={i} style={{padding:"7px 10px",fontSize:11.5,color:"#7f1d1d",borderBottom:"1px solid #fee2e2"}}>
+                  <span style={{color:"#dc2626",fontWeight:600}}>{u.date}</span> · {u.schoolRaw.slice(0,55)}
+                </div>
+              ))}
+              {calPreview.unmatchedCount>15 && <div style={{padding:"7px 10px",fontSize:11,color:"#94a3b8",textAlign:"center"}}>... 외 {calPreview.unmatchedCount-15}건</div>}
+            </div>
+            <div style={{fontSize:11,color:"#94a3b8",marginTop:6,lineHeight:1.5}}>
+              💡 매칭 실패 이유: 메인 시트에 그 학교가 없거나, 현장조사 날짜가 일치하지 않음
+            </div>
+          </details>}
+
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={()=>setCalPreview(null)}
+              style={{flex:1,padding:"11px",borderRadius:9,border:"1px solid #e5e7eb",background:"#fff",color:"#475569",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>취소</button>
+            <button onClick={applyCalendarMatches} disabled={calPreview.matched.length===0}
+              style={{flex:1,padding:"11px",borderRadius:9,border:"none",background:calPreview.matched.length>0?"#7c3aed":"#cbd5e1",color:"#fff",fontSize:13,fontWeight:700,cursor:calPreview.matched.length>0?"pointer":"not-allowed",fontFamily:"inherit"}}>
+              {calPreview.matched.length}건 적용
+            </button>
+          </div>
+        </div>
+      </div>}
 
       {/* 엑셀 업로드 미리보기 — 기존과 동일 */}
       {preview&&(()=>{
@@ -2205,22 +2461,32 @@ function Overview({rows,total,done,urgCnt,delayed}) {
   };
   const ScheduleCard = ({r,type})=>{
     const st = TYPE_STYLE[type];
+    // 현장조사 타입일 때 현장참여 인원 표시 (있으면), 그 외엔 lead 표시
+    const showCrew = type==="survey" && Array.isArray(r.현장참여) && r.현장참여.length>0;
     return(
-      <div style={{background:"#fff",borderRadius:12,padding:"13px 14px",boxShadow:"0 1px 3px rgba(0,0,0,.05)",marginBottom:8,display:"flex",alignItems:"center",gap:11}}>
-        <span style={{background:st.bg,color:st.c,fontSize:11,fontWeight:700,padding:"4px 9px",borderRadius:8,whiteSpace:"nowrap",flexShrink:0}}>{st.label}</span>
+      <div style={{background:"#fff",borderRadius:12,padding:"13px 14px",boxShadow:"0 1px 3px rgba(0,0,0,.05)",marginBottom:8,display:"flex",alignItems:"flex-start",gap:11}}>
+        <span style={{background:st.bg,color:st.c,fontSize:11,fontWeight:700,padding:"4px 9px",borderRadius:8,whiteSpace:"nowrap",flexShrink:0,marginTop:2}}>{st.label}</span>
         <div style={{flex:1,minWidth:0}}>
           <div style={{fontSize:14.5,fontWeight:700,color:"#0f172a",marginBottom:2,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
             <span>{r.학교명}</span>
             {r.신규&&<span style={{background:"linear-gradient(135deg,#f97316,#dc2626)",color:"#fff",borderRadius:6,padding:"2px 8px",fontSize:10.5,fontWeight:800,letterSpacing:0.3,boxShadow:"0 1px 3px rgba(220,38,38,0.3)"}}>🆕 NEW</span>}
           </div>
-          <div style={{fontSize:12.5,color:"#475569",marginBottom:r.전화번호?3:0}}>
+          <div style={{fontSize:12.5,color:"#475569",marginBottom:(r.전화번호||showCrew)?4:0}}>
             {r.지역}{r.시설명?` · ${r.시설명}`:""}
             {r.동수>0 && ` · ${r.동수}동`}
             {r.연면적>0 && ` · ${r.연면적.toLocaleString()}㎡`}
           </div>
-          {r.전화번호 && <a href={`tel:${r.전화번호.replace(/-/g,"")}`} style={{fontSize:12,color:"#1d4ed8",fontWeight:600,textDecoration:"none",display:"inline-flex",alignItems:"center",gap:4}}>📞 {r.전화번호}</a>}
+          {r.전화번호 && <a href={`tel:${r.전화번호.replace(/-/g,"")}`} style={{fontSize:12,color:"#1d4ed8",fontWeight:600,textDecoration:"none",display:"inline-flex",alignItems:"center",gap:4,marginRight:8}}>📞 {r.전화번호}</a>}
+          {showCrew && <div style={{fontSize:12,color:"#475569",marginTop:4,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+            <span style={{color:"#7c3aed",fontWeight:700}}>👥 현장</span>
+            {r.현장참여.map((n,i)=>(
+              <span key={i} style={{display:"inline-flex",alignItems:"center",gap:4,background:"#f5f3ff",color:"#6b21a8",padding:"2px 8px",borderRadius:10,fontSize:11.5,fontWeight:600}}>
+                <Av name={n} size={16}/>{n}
+              </span>
+            ))}
+          </div>}
         </div>
-        {r.lead&&<div style={{display:"flex",alignItems:"center",gap:5,flexShrink:0}}>
+        {!showCrew && r.lead && <div style={{display:"flex",alignItems:"center",gap:5,flexShrink:0,marginTop:2}}>
           <Av name={r.lead} size={26}/>
           <span style={{fontSize:12.5,color:"#475569",fontWeight:600}}>{r.lead}</span>
         </div>}
@@ -3103,6 +3369,7 @@ function App() {
             status:     r.status    || "예정",
             계약금액:   parseInt(r.계약금액) || 0,
             신규:       !!r.신규,
+            현장참여:   Array.isArray(r.현장참여) ? r.현장참여 : [],
           }));
         setRows(loaded);
       }
