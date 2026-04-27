@@ -159,6 +159,7 @@ const fbRows = rows => {
       납품일:     r.납품일    || "",
       FMS:        r.FMS       || "",
       특기사항:   r.특기사항  || "",
+      전화번호:   r.전화번호  || "",
       납품방법:   r.납품방법  || "현장납품",
       lead:       r.lead      || "",
       progress:   r.progress  || 0,
@@ -2012,7 +2013,7 @@ function Revenue({rows,setRows}) {
 /* ══════════════════════════════════════
    설정
 ══════════════════════════════════════ */
-function Settings({adminPw,setAdminPw,members,setMembers}) {
+function Settings({adminPw,setAdminPw,members,setMembers,rows,setRows}) {
   const [pf,setPf]=useState({cur:"",next:"",confirm:""});
   const [pm,setPm]=useState(null);
   const [ml,setMl]=useState([...members]);
@@ -2076,6 +2077,46 @@ function Settings({adminPw,setAdminPw,members,setMembers}) {
             </div>
             {mm&&<div style={{marginTop:7,padding:"6px 10px",borderRadius:8,background:mm.t==="ok"?"#f0fdf4":"#fef2f2",color:mm.t==="ok"?"#16a34a":"#dc2626",fontSize:12}}>{mm.msg}</div>}
           </div>
+        </div>
+      </div>
+
+      {/* 일괄 도구 (위험) */}
+      <div style={{background:"#fff",borderRadius:14,padding:18,boxShadow:"0 1px 4px rgba(0,0,0,.07)",border:"1px solid #fde68a"}}>
+        <div style={{fontWeight:700,marginBottom:14,fontSize:14,color:"#92400e"}}>🛠 일괄 도구 (관리자 전용)</div>
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          <button onClick={()=>{
+              if(!confirm(`전체 ${rows.length}건의 현장에서 담당자 정보를 모두 비울까요?\n(엑셀 재업로드 시 자동 채워짐)`)) return;
+              const cleared = rows.map(r=>({...r, lead:""}));
+              setRows(cleared);
+              fbRows(cleared);
+              alert("✅ 모든 담당자가 비워졌습니다");
+            }}
+            style={{padding:"10px 14px",borderRadius:9,border:"1px solid #fca5a5",background:"#fff1f2",color:"#dc2626",fontSize:13,fontWeight:600,cursor:"pointer",textAlign:"left",fontFamily:"inherit"}}>
+            🧹 모든 담당자 일괄 비우기 ({rows.length}건)
+          </button>
+          <button onClick={()=>{
+              const updated = rows.map(r=>{
+                if(!r.특기사항) return r;
+                // 한국 전화번호 패턴 추출 (010-XXXX-XXXX, 02-XXX-XXXX 등)
+                const phoneMatch = r.특기사항.match(/(\d{2,3})[-.\s]?(\d{3,4})[-.\s]?(\d{4})/);
+                if(!phoneMatch) return r;
+                const phone = `${phoneMatch[1]}-${phoneMatch[2]}-${phoneMatch[3]}`;
+                if(r.전화번호===phone) return r;
+                return {...r, 전화번호: phone};
+              });
+              const changed = updated.filter((r,i)=>r.전화번호!==rows[i].전화번호).length;
+              if(changed===0){ alert("새로 찾은 전화번호가 없습니다"); return; }
+              if(!confirm(`${changed}건의 현장에서 특기사항에 있는 전화번호를 추출했습니다.\n적용할까요?`)) return;
+              setRows(updated);
+              fbRows(updated);
+              alert(`✅ ${changed}건의 전화번호가 등록됐습니다`);
+            }}
+            style={{padding:"10px 14px",borderRadius:9,border:"1px solid #93c5fd",background:"#eff6ff",color:"#1d4ed8",fontSize:13,fontWeight:600,cursor:"pointer",textAlign:"left",fontFamily:"inherit"}}>
+            📞 특기사항에서 전화번호 자동 추출
+          </button>
+        </div>
+        <div style={{marginTop:12,fontSize:11,color:"#92400e",lineHeight:1.6}}>
+          ⚠️ 이 작업들은 모든 데이터에 영향을 줍니다. 신중히 사용하세요.
         </div>
       </div>
     </div>
@@ -2170,11 +2211,14 @@ function Overview({rows,total,done,urgCnt,delayed}) {
         <div style={{flex:1,minWidth:0}}>
           <div style={{fontSize:14.5,fontWeight:700,color:"#0f172a",marginBottom:2,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
             <span>{r.학교명}</span>
-            {r.신규&&<span style={{background:"#dcfce7",color:"#16a34a",borderRadius:4,padding:"1px 5px",fontSize:9,fontWeight:700}}>NEW</span>}
+            {r.신규&&<span style={{background:"linear-gradient(135deg,#f97316,#dc2626)",color:"#fff",borderRadius:6,padding:"2px 8px",fontSize:10.5,fontWeight:800,letterSpacing:0.3,boxShadow:"0 1px 3px rgba(220,38,38,0.3)"}}>🆕 NEW</span>}
           </div>
-          <div style={{fontSize:12.5,color:"#475569"}}>
+          <div style={{fontSize:12.5,color:"#475569",marginBottom:r.전화번호?3:0}}>
             {r.지역}{r.시설명?` · ${r.시설명}`:""}
+            {r.동수>0 && ` · ${r.동수}동`}
+            {r.연면적>0 && ` · ${r.연면적.toLocaleString()}㎡`}
           </div>
+          {r.전화번호 && <a href={`tel:${r.전화번호.replace(/-/g,"")}`} style={{fontSize:12,color:"#1d4ed8",fontWeight:600,textDecoration:"none",display:"inline-flex",alignItems:"center",gap:4}}>📞 {r.전화번호}</a>}
         </div>
         {r.lead&&<div style={{display:"flex",alignItems:"center",gap:5,flexShrink:0}}>
           <Av name={r.lead} size={26}/>
@@ -2244,11 +2288,15 @@ function Overview({rows,total,done,urgCnt,delayed}) {
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{fontSize:14.5,fontWeight:700,color:"#0f172a",marginBottom:3,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
                     <span>{r.학교명}</span>
-                    {r.신규&&<span style={{background:"#dcfce7",color:"#16a34a",borderRadius:4,padding:"1px 5px",fontSize:9,fontWeight:700}}>NEW</span>}
+                    {r.신규&&<span style={{background:"linear-gradient(135deg,#f97316,#dc2626)",color:"#fff",borderRadius:6,padding:"2px 8px",fontSize:10.5,fontWeight:800,letterSpacing:0.3,boxShadow:"0 1px 3px rgba(220,38,38,0.3)"}}>🆕 NEW</span>}
                   </div>
-                  <div style={{fontSize:12.5,color:"#475569"}}>
-                    {r.지역}{r.시설명?` · ${r.시설명}`:""}{r.lead?` · ${r.lead}`:""} · {r.완수일}
+                  <div style={{fontSize:12.5,color:"#475569",marginBottom:r.전화번호?3:0}}>
+                    {r.지역}{r.시설명?` · ${r.시설명}`:""}
+                    {r.동수>0 && ` · ${r.동수}동`}
+                    {r.연면적>0 && ` · ${r.연면적.toLocaleString()}㎡`}
+                    {r.lead?` · ${r.lead}`:""} · {r.완수일}
                   </div>
+                  {r.전화번호 && <a href={`tel:${r.전화번호.replace(/-/g,"")}`} style={{fontSize:12,color:"#1d4ed8",fontWeight:600,textDecoration:"none",display:"inline-flex",alignItems:"center",gap:4}}>📞 {r.전화번호}</a>}
                 </div>
                 <span style={{background:accent,color:"#fff",borderRadius:20,padding:"5px 13px",fontWeight:800,fontSize:13,whiteSpace:"nowrap",flexShrink:0}}>{isOver?`지연 ${Math.abs(d)}`:dLabel(d)}</span>
               </div>
@@ -2271,7 +2319,7 @@ function Overview({rows,total,done,urgCnt,delayed}) {
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:3}}>
                     <span style={{fontWeight:700,fontSize:13.5,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.학교명}</span>
-                    {r.신규&&<span style={{background:"#dcfce7",color:"#16a34a",borderRadius:4,padding:"1px 5px",fontSize:9,fontWeight:700,flexShrink:0}}>NEW</span>}
+                    {r.신규&&<span style={{background:"linear-gradient(135deg,#f97316,#dc2626)",color:"#fff",borderRadius:6,padding:"2px 8px",fontSize:10.5,fontWeight:800,letterSpacing:0.3,flexShrink:0,boxShadow:"0 1px 3px rgba(220,38,38,0.3)"}}>🆕 NEW</span>}
                   </div>
                   <div style={{fontSize:12,color:"#64748b",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
                     {r.지역} · {r.시설명}
@@ -3048,6 +3096,7 @@ function App() {
             납품일:     r.납품일    || "",
             FMS:        r.FMS       || "",
             특기사항:   r.특기사항  || "",
+            전화번호:   r.전화번호  || "",
             납품방법:   r.납품방법  || "현장납품",
             lead:       r.lead      || "",
             progress:   r.progress  || 0,
@@ -3254,7 +3303,7 @@ function App() {
         {tab==="현장 관리"   && <SiteManager rows={rows} setRows={setRows} members={members} isAdmin={isAdmin} addPoints={addPoints} userName={user.name}/>}
         {tab==="팀 채팅"     && <Chat user={user} members={members}/>}
         {tab==="매출 현황"   && isAdmin && <Revenue rows={rows} setRows={setRows}/>}
-        {tab==="설정"        && isAdmin && <Settings adminPw={adminPw} setAdminPw={setAdminPw} members={members} setMembers={setMembers}/>}
+        {tab==="설정"        && isAdmin && <Settings adminPw={adminPw} setAdminPw={setAdminPw} members={members} setMembers={setMembers} rows={rows} setRows={setRows}/>}
         {tab==="내 공간"     && <MyPage targetName={profileTarget||user.name} isOwn={(profileTarget||user.name)===user.name} userData={usersData[profileTarget||user.name]||{}} rows={rows} addPoints={addPoints}/>}
       </div>
     </div>
