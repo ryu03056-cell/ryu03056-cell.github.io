@@ -1961,6 +1961,13 @@ function Calendar({rows,addPoints,userName}) {
             const totalArea = g.rows.reduce((s,r)=>s+(r.연면적||0),0);
             const minD = type==="report" ? g.rows.reduce((m,r)=>{const d=diffDays(r.완수일);if(d===null)return m;return m===null?d:Math.min(m,d);},null) : null;
             const isUrg = minD!==null && minD<=3 && g.rows.some(r=>r.progress!==6);
+            // 학교의 모든 동에 등록된 현장참여 인원 합치기 (중복 제거)
+            const crewSet = new Set();
+            g.rows.forEach(r=>{
+              if(Array.isArray(r.현장참여)) r.현장참여.forEach(n=>crewSet.add(n));
+            });
+            const crew = Array.from(crewSet);
+            const showCrew = type==="survey" && crew.length>0;
             return(
               <div key={`${type}_${g.학교명}`} style={{background:"#f8fafc",borderRadius:10,marginBottom:6,overflow:"hidden",border:open?`1.5px solid ${color}`:"1.5px solid transparent"}}>
                 {/* 학교 헤더 */}
@@ -1970,8 +1977,8 @@ function Calendar({rows,addPoints,userName}) {
                     next.has(k) ? next.delete(k) : next.add(k);
                     setExpandedSchools(next);
                   }}
-                  style={{padding:"11px 13px",cursor:"pointer",display:"flex",alignItems:"center",gap:10}}>
-                  <span style={{fontSize:12,color:"#94a3b8",width:14}}>{open?"▼":"▶"}</span>
+                  style={{padding:"11px 13px",cursor:"pointer",display:"flex",alignItems:"flex-start",gap:10}}>
+                  <span style={{fontSize:12,color:"#94a3b8",width:14,marginTop:2}}>{open?"▼":"▶"}</span>
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{fontWeight:700,fontSize:14,marginBottom:2,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
                       <span>{g.학교명}</span>
@@ -1983,8 +1990,17 @@ function Calendar({rows,addPoints,userName}) {
                       {totalArea>0 && <> · 연면적 합 <strong style={{color:"#0f172a"}}>{totalArea.toLocaleString()}㎡</strong></>}
                       {type==="deliver" && <> · {g.납품방법==="현장납품"?"현장납품":"택배납품"}</>}
                     </div>
+                    {/* 현장참여 인원 (현장조사일 때만) */}
+                    {showCrew && <div style={{marginTop:6,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                      <span style={{fontSize:11,color:"#7c3aed",fontWeight:700}}>👥 현장</span>
+                      {crew.map((n,i)=>(
+                        <span key={i} style={{display:"inline-flex",alignItems:"center",gap:4,background:"#f5f3ff",color:"#6b21a8",padding:"2px 8px",borderRadius:10,fontSize:11.5,fontWeight:600}}>
+                          <Av name={n} size={16}/>{n}
+                        </span>
+                      ))}
+                    </div>}
                   </div>
-                  {g.lead&&<div style={{display:"flex",alignItems:"center",gap:5,flexShrink:0}}><Av name={g.lead} size={26}/><span style={{fontSize:12.5,fontWeight:600,color:"#475569"}}>{g.lead}</span></div>}
+                  {!showCrew && g.lead && <div style={{display:"flex",alignItems:"center",gap:5,flexShrink:0,marginTop:2}}><Av name={g.lead} size={26}/><span style={{fontSize:12.5,fontWeight:600,color:"#475569"}}>{g.lead}</span></div>}
                 </div>
                 {/* 펼친 동 목록 */}
                 {open && <div style={{padding:"0 13px 11px",borderTop:"1px dashed #e2e8f0"}}>
