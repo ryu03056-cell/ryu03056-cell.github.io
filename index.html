@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"/>
-<title>STON — 현장 일정·관리</title>
+<title>🧪 테스트 — STON</title>
 <link rel="manifest" href="manifest.json"/>
 <meta name="apple-mobile-web-app-capable" content="yes"/>
 <meta name="apple-mobile-web-app-status-bar-style" content="default"/>
@@ -36,6 +36,13 @@
 </style>
 </head>
 <body>
+<div id="testbar" style="position:fixed;top:0;left:0;right:0;z-index:99999;
+  background:repeating-linear-gradient(45deg,#EF9F27,#EF9F27 12px,#D98E1F 12px,#D98E1F 24px);
+  color:#fff;font:800 13px/1 'Malgun Gothic',sans-serif;text-align:center;
+  padding:7px 10px;letter-spacing:.5px;box-shadow:0 2px 8px rgba(0,0,0,.2)">
+  🧪 테스트 앱 — 실제 데이터가 아닙니다 (ston_test)
+</div>
+<div style="height:29px"></div>
 <div id="root"><div id="boot"><div class="logo">◈ STON</div><div style="font-size:13px;">현장 일정·관리 시스템 불러오는 중...</div><div class="bar"><i></i></div></div></div>
 <script>
 const { useState, useMemo, useCallback, useRef, useEffect } = React;
@@ -10644,18 +10651,18 @@ const FIREBASE_CONFIG = {
 };
 /* OneSignal 푸시 전송용 Cloudflare Worker (자매 앱과 동일) */
 const PUSH_ENDPOINT = "https://ston03.ryu03056.workers.dev";
-const FB_DATA = "ston/data"; // 학교 데이터 (ID로 키잉 → 부분 저장)
-const FB_META = "ston/meta"; // 마지막 수정자/시각
-const FB_PRESENCE = "ston/presence"; // 동시 접속자
-const FB_LOGS = "ston/logs"; // 수정 로그
-const FB_CONFIG = "ston/config"; // 팀/인원 설정 (관리자 편집)
-const FB_GEO = "ston/geo"; // 현장 좌표 캐시 (한 번 찾으면 재사용)
-const FB_BK_IDX = "ston/backup_index"; // 백업 목록(가벼움 — 목록만 읽을 때 사용)
-const FB_BK_DAT = "ston/backup_data"; // 백업 본문(무거움 — 복원할 때만 읽음)
-const FB_UNDO = "ston/undo"; // 최근 변경 되돌리기용 기록
-const FB_BOARD = "ston/board"; // 게시판 글
-const FB_ADMINS = "ston/admins"; // 관리자 이메일 목록 — 규칙에서도 이 값을 본다
-const FB_NOTES = "ston/notes"; // 현장이 아닌 메모 일정 (휴가·회의 등)
+const FB_DATA = "ston_test/data"; // 학교 데이터 (ID로 키잉 → 부분 저장)
+const FB_META = "ston_test/meta"; // 마지막 수정자/시각
+const FB_PRESENCE = "ston_test/presence"; // 동시 접속자
+const FB_LOGS = "ston_test/logs"; // 수정 로그
+const FB_CONFIG = "ston_test/config"; // 팀/인원 설정 (관리자 편집)
+const FB_GEO = "ston_test/geo"; // 현장 좌표 캐시 (한 번 찾으면 재사용)
+const FB_BK_IDX = "ston_test/backup_index"; // 백업 목록(가벼움 — 목록만 읽을 때 사용)
+const FB_BK_DAT = "ston_test/backup_data"; // 백업 본문(무거움 — 복원할 때만 읽음)
+const FB_UNDO = "ston_test/undo"; // 최근 변경 되돌리기용 기록
+const FB_BOARD = "ston_test/board"; // 게시판 글
+const FB_ADMINS = "ston_test/admins"; // 관리자 이메일 목록 — 규칙에서도 이 값을 본다
+const FB_NOTES = "ston_test/notes"; // 현장이 아닌 메모 일정 (휴가·회의 등)
 
 /* 메모 일정 종류 — 현장 점검과 구분되는 부가 일정 */
 const NOTE_KINDS = [{
@@ -11769,7 +11776,7 @@ function SettingsPage({
   }, [kakaoKey]);
   const [diag, setDiag] = useState(null); // Firebase 직접 확인 결과
   const [diagBusy, setDiagBusy] = useState(false);
-  /* 관리자 지정·해제 — ston/admins/<uid> */
+  /* 관리자 지정·해제 — ston_test/admins/<uid> */
   const setAdminFlag = (a, on) => {
     if (isOwnerEmail(a.email)) {
       window.alert("총관리자 계정입니다.\n권한을 바꿀 수 없습니다.");
@@ -11940,7 +11947,7 @@ function SettingsPage({
     setDiagBusy(true);
     setDiag(null);
     try {
-      const tRef = firebase.database().ref("ston/_writetest");
+      const tRef = firebase.database().ref("ston_test/_writetest");
       tRef.set({
         at: Date.now(),
         by: editor || "test"
