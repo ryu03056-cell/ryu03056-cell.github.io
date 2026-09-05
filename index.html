@@ -16196,6 +16196,58 @@ function App() {
   const [sheetErr, setSheetErr] = useState(null); // 실패 사유
   const [sheetBusy, setSheetBusy] = useState(false);
   const [syncMap, setSyncMap] = useState({}); // 사람이 골라둔 짝짓기
+  const [sheetChanges, setSheetChanges] = useState([]); // 시트에서 바뀐 것들
+  const [showChanges, setShowChanges] = useState(false); // 목록 펼침
+  const prevSheet = useRef(null); // 직전에 받은 시트 (견주기용)
+
+  /* 시트에서 무엇이 바뀌었는지 찾아낸다 */
+  const diffSheet = (before, after) => {
+    if (!before || !before.sites) return [];
+    const oldMap = {};
+    before.sites.forEach(r => oldMap[r.row] = r);
+    const FIELDS = [["field", "현장조사일"], ["start", "착수일"], ["end", "완수일"], ["contract", "계약일"], ["kind", "점검종류"], ["region", "지역"], ["school", "학교명"], ["memo", "특이사항"], ["fmsId", "FMS ID"], ["deliverY", "납품유무"], ["deliverW", "납품방법"], ["doneY", "완수유무"]];
+    const out = [];
+    after.sites.forEach(r => {
+      const o = oldMap[r.row];
+      if (!o) {
+        out.push({
+          kind: "새로 추가",
+          school: `${r.region || ""} ${r.school}`.trim(),
+          row: r.row
+        });
+        return;
+      }
+      FIELDS.forEach(([k, label]) => {
+        if (String(o[k] || "") !== String(r[k] || "")) out.push({
+          kind: "바뀜",
+          school: `${r.region || ""} ${r.school}`.trim(),
+          row: r.row,
+          field: label,
+          before: o[k] || "(없음)",
+          after: r[k] || "(없음)"
+        });
+      });
+      /* 동(시설물) 개수 변화도 알려준다 */
+      const ob = (o.buildings || []).length,
+        nb = (r.buildings || []).length;
+      if (ob !== nb) out.push({
+        kind: "바뀜",
+        school: `${r.region || ""} ${r.school}`.trim(),
+        row: r.row,
+        field: "동 개수",
+        before: ob + "동",
+        after: nb + "동"
+      });
+      delete oldMap[r.row];
+    });
+    /* 시트에서 사라진 것 */
+    Object.values(oldMap).forEach(o => out.push({
+      kind: "시트에서 사라짐",
+      school: `${o.region || ""} ${o.school}`.trim(),
+      row: o.row
+    }));
+    return out;
+  };
 
   /* 시트에서 받아오기 — 열 때 + 5분마다 + 새로고침 버튼 */
   const sheetPending = useRef(false); // 이미 부르는 중인지
@@ -16217,6 +16269,10 @@ function App() {
       const j = await res.json();
       if (!j || !j.ok) throw new Error(j && j.error || "시트를 읽지 못했습니다");
       if (!Array.isArray(j.sites)) throw new Error("시트 내용이 올바르지 않습니다");
+      /* 직전에 받은 것과 견줘 무엇이 바뀌었는지 찾는다 (처음 받을 때는 건너뜀) */
+      const ch = diffSheet(prevSheet.current, j);
+      prevSheet.current = j;
+      if (ch.length) setSheetChanges(prev => [...ch, ...prev].slice(0, 200));
       setSheet(j);
       setSheetAt(Date.now());
     } catch (e) {
@@ -16243,6 +16299,35 @@ function App() {
       document.removeEventListener("visibilitychange", onWake);
     };
   }, [loadSheet, authUser]);
+
+  /* 앱 → 시트 : 현장조사일 보내기.
+     짝지어진 현장만, 값이 실제로 다를 때만 보낸다. */
+  const pushToSheet = React.useCallback(async list => {
+    if (!list || !list.length) return {
+      ok: false,
+      error: "보낼 내용이 없습니다"
+    };
+    try {
+      const res = await fetch(SHEET_URL, {
+        method: "POST",
+        body: JSON.stringify({
+          key: SHEET_KEY,
+          updates: list
+        })
+      });
+      const j = await res.json();
+      if (!j || !j.ok) throw new Error(j && j.error || "시트에 쓰지 못했습니다");
+      /* 쓰고 나면 곧바로 다시 읽어 화면을 맞춘다 */
+      setTimeout(loadSheet, 800);
+      return j;
+    } catch (e) {
+      return {
+        ok: false,
+        error: e && e.message || String(e)
+      };
+    }
+  }, [loadSheet]);
+
 
   /* 사람이 골라둔 짝짓기 기억 */
   useEffect(() => {
@@ -16777,6 +16862,26 @@ function App() {
       skipped
     };
   }, [sheet, allSchools, syncMap]);
+  /* 조사일이 시트와 다른 현장 목록 — 보낼 것이 있는지 */
+  const pending = useMemo(() => {
+    if (!sheetMatch) return [];
+    const out = [];
+    allSchools.forEach(s => {
+      const m = sheetMatch.map[s.id];
+      if (!m) return;
+      const appV = s.field || "";
+      const shV = m.row.field || "";
+      if (appV !== shV) out.push({
+        site: s,
+        row: m.row.row,
+        school: m.row.school,
+        region: m.row.region,
+        appV,
+        shV
+      });
+    });
+    return out;
+  }, [sheetMatch, allSchools]);
 
   const urgent = allSchools.filter(s => {
     const d = calcDday(s.end);
@@ -16907,7 +17012,187 @@ function App() {
       color: C.t1,
       fontSize: 15
     }
-  }, /*#__PURE__*/React.createElement("style", null, `*{box-sizing:border-box}html,body{overflow-x:hidden;max-width:100%}::-webkit-scrollbar{width:5px;height:5px}::-webkit-scrollbar-track{background:${C.surfaceL}}::-webkit-scrollbar-thumb{background:${C.borderD};border-radius:4px}input::placeholder,textarea::placeholder{color:${C.t4}}button{cursor:pointer;transition:all .12s}button:hover{opacity:.85}input,textarea,select{max-width:100%}input[type="date"]{color-scheme:light}@keyframes spin{to{transform:rotate(360deg)}}
+  }, pending.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "fixed",
+      left: 0,
+      right: 0,
+      bottom: sheetChanges.length > 0 ? 52 : 0,
+      zIndex: 9001,
+      background: C.orangeL,
+      borderTop: `2px solid ${C.orange}`,
+      boxShadow: "0 -4px 20px rgba(0,0,0,.12)",
+      padding: "10px 14px",
+      display: "flex",
+      alignItems: "center",
+      gap: 10,
+      flexWrap: "wrap"
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 16
+    }
+  }, "📤"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 14,
+      fontWeight: 800,
+      color: C.orange
+    }
+  }, "앱에서 고친 현장조사일 ", pending.length, "건이 시트와 다릅니다"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 12,
+      color: C.t3,
+      flex: 1,
+      minWidth: 150
+    }
+  }, pending.slice(0, 3).map(p => `${p.school} ${p.shV || "(없음)"}→${p.appV || "(없음)"}`).join(" · "), pending.length > 3 ? ` 외 ${pending.length - 3}건` : ""), /*#__PURE__*/React.createElement("button", {
+    onClick: async () => {
+      if (!window.confirm(`현장조사일 ${pending.length}건을 시트에 보냅니다.\n\n` + pending.slice(0, 10).map(p => `· ${p.school}  ${p.shV || "(없음)"} → ${p.appV || "(없음)"}`).join("\n") + (pending.length > 10 ? `\n… 외 ${pending.length - 10}건` : ""))) return;
+      const r = await pushToSheet(pending.map(p => ({
+        row: p.row,
+        school: p.school,
+        region: p.region,
+        field: p.appV
+      })));
+      if (!r.ok) {
+        window.alert("보내지 못했습니다 — " + r.error);
+        return;
+      }
+      const bad = (r.results || []).filter(x => !x.ok);
+      window.alert(bad.length ? `${(r.results || []).length - bad.length}건 보냈습니다.\n실패 ${bad.length}건:\n` + bad.map(x => `· ${x.row}행 — ${x.error}`).join("\n") : `${(r.results || []).length}건을 시트에 보냈습니다.`);
+    },
+    style: {
+      padding: "8px 16px",
+      borderRadius: 8,
+      border: "none",
+      background: C.orange,
+      color: "#fff",
+      fontSize: 13,
+      fontWeight: 800,
+      cursor: "pointer",
+      whiteSpace: "nowrap"
+    }
+  }, "시트로 보내기")), sheetChanges.length > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "fixed",
+      left: 0,
+      right: 0,
+      bottom: 0,
+      zIndex: 9000,
+      background: C.surface,
+      borderTop: `2px solid ${C.blue}`,
+      boxShadow: "0 -4px 20px rgba(0,0,0,.14)",
+      maxHeight: showChanges ? "60vh" : "auto",
+      overflowY: showChanges ? "auto" : "visible"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    onClick: () => setShowChanges(v => !v),
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 9,
+      padding: "11px 14px",
+      cursor: "pointer",
+      background: C.blueL,
+      borderBottom: showChanges ? BD : "none"
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 16
+    }
+  }, "🔄"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 14,
+      fontWeight: 800,
+      color: C.blue
+    }
+  }, "시트에서 ", sheetChanges.length, "건이 바뀌었습니다"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      marginLeft: "auto",
+      display: "flex",
+      gap: 6
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      padding: "5px 11px",
+      borderRadius: 7,
+      border: `1px solid ${C.blue}45`,
+      background: C.surface,
+      color: C.blue,
+      fontSize: 12,
+      fontWeight: 800
+    }
+  }, showChanges ? "접기" : "보기"), /*#__PURE__*/React.createElement("span", {
+    onClick: e => {
+      e.stopPropagation();
+      setSheetChanges([]);
+      setShowChanges(false);
+    },
+    style: {
+      padding: "5px 11px",
+      borderRadius: 7,
+      border: BD,
+      background: C.surface,
+      color: C.t3,
+      fontSize: 12,
+      fontWeight: 800
+    }
+  }, "닫기"))), showChanges && /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "10px 14px 14px"
+    }
+  }, sheetChanges.map((c, i) => /*#__PURE__*/React.createElement("div", {
+    key: i,
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+      padding: "8px 10px",
+      marginBottom: 5,
+      borderRadius: 7,
+      background: C.surfaceL,
+      border: BD,
+      borderLeft: `3px solid ${c.kind === "새로 추가" ? C.green : c.kind === "시트에서 사라짐" ? C.red : C.blue}`,
+      fontSize: 13
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontWeight: 800,
+      color: C.t1,
+      minWidth: 130
+    }
+  }, c.school), c.kind === "바뀜" ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: C.t3,
+      minWidth: 70,
+      fontWeight: 700
+    }
+  }, c.field), /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: C.t4,
+      textDecoration: "line-through"
+    }
+  }, c.before), /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: C.t4
+    }
+  }, "→"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: C.blue,
+      fontWeight: 800
+    }
+  }, c.after)) : /*#__PURE__*/React.createElement("span", {
+    style: {
+      color: c.kind === "새로 추가" ? C.green : C.red,
+      fontWeight: 800
+    }
+  }, c.kind === "새로 추가" ? "✚ 시트에 새로 추가됨" : "✕ 시트에서 사라짐"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      marginLeft: "auto",
+      fontSize: 11,
+      color: C.t4
+    }
+  }, c.row, "행"))))), /*#__PURE__*/React.createElement("style", null, `*{box-sizing:border-box}html,body{overflow-x:hidden;max-width:100%}::-webkit-scrollbar{width:5px;height:5px}::-webkit-scrollbar-track{background:${C.surfaceL}}::-webkit-scrollbar-thumb{background:${C.borderD};border-radius:4px}input::placeholder,textarea::placeholder{color:${C.t4}}button{cursor:pointer;transition:all .12s}button:hover{opacity:.85}input,textarea,select{max-width:100%}input[type="date"]{color-scheme:light}@keyframes spin{to{transform:rotate(360deg)}}
 /* ── 휴대폰 ── iOS는 글자 16px 미만 입력칸을 누르면 화면을 확대해버린다 → 16px 고정으로 막는다 */
 @media(max-width:819px){
   input,textarea,select{font-size:16px !important}
