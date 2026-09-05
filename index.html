@@ -16331,26 +16331,6 @@ function App() {
   }, [loadSheet]);
 
 
-  /* 앱에서 현장을 지우면 시트의 조사일도 비운다.
-     현장은 시트에 남기되(착수·완수·FMS 등은 시트가 주인) 조사 일정만 취소됐음을 알린다. */
-  useEffect(() => {
-    window.__stonClearSheetField = async siteId => {
-      if (!sheetMatch) return;
-      const m = sheetMatch.map[siteId];
-      if (!m || !m.row.field) return; /* 시트에 조사일이 없으면 할 일 없음 */
-      const r = await pushToSheet([{
-        row: m.row.row,
-        school: m.row.school,
-        region: m.row.region,
-        field: ""
-      }]);
-      if (!r.ok) console.warn("시트 조사일 비우기 실패:", r.error);
-    };
-    return () => {
-      delete window.__stonClearSheetField;
-    };
-  }, [sheetMatch, pushToSheet]);
-
   /* 사람이 골라둔 짝짓기 기억 */
   useEffect(() => {
     if (!authUser || typeof firebase === "undefined" || !firebase.apps.length) return;
@@ -16945,6 +16925,26 @@ function App() {
     setPending(toSend);
     setIncoming(toGet);
   }, [sheetMatch, allSchools]);
+
+  /* 앱에서 현장을 지우면 시트의 조사일도 비운다.
+     현장은 시트에 남기되(착수·완수·FMS 등은 시트가 주인) 조사 일정만 취소됐음을 알린다. */
+  useEffect(() => {
+    window.__stonClearSheetField = async siteId => {
+      if (!sheetMatch) return;
+      const m = sheetMatch.map[siteId];
+      if (!m || !m.row.field) return; /* 시트에 조사일이 없으면 할 일 없음 */
+      const r = await pushToSheet([{
+        row: m.row.row,
+        school: m.row.school,
+        region: m.row.region,
+        field: ""
+      }]);
+      if (!r.ok) console.warn("시트 조사일 비우기 실패:", r.error);
+    };
+    return () => {
+      delete window.__stonClearSheetField;
+    };
+  }, [sheetMatch, pushToSheet]);
 
   const urgent = allSchools.filter(s => {
     const d = calcDday(s.end);
