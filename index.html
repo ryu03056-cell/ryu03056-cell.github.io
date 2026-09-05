@@ -10663,6 +10663,76 @@ const FB_UNDO = "ston_test/undo"; // 최근 변경 되돌리기용 기록
 const FB_BOARD = "ston_test/board"; // 게시판 글
 const FB_ADMINS = "ston_test/admins"; // 관리자 이메일 목록 — 규칙에서도 이 값을 본다
 const FB_NOTES = "ston_test/notes"; // 현장이 아닌 메모 일정 (휴가·회의 등)
+const FB_SYNC = "ston_test/sync"; // 시트 짝짓기 기억 (한 번 고르면 다시 안 물어봄)
+
+/* ══════════════════════════════════════════════════════════════
+   구글 시트 연동
+   · 시트 → 앱 : 열 때 + 5분마다 + 새로고침 버튼
+   · 앱 → 시트 : 현장조사일만 (다음 단계에서)
+   ══════════════════════════════════════════════════════════════ */
+const SHEET_URL = "https://script.google.com/macros/s/AKfycbzePBMXZu0EkKrQIpwnUEuSrPCDsahNOgyfk6Cxl-RhIdyzOE1DuproN7U9JyWRXLc/exec";
+const SHEET_KEY = "ston2026";
+
+/* 학교 이름을 견줄 수 있게 다듬는다 — 고등학교↔고, 띄어쓰기 차이 흡수 */
+const normName = v => String(v || "").replace(/\s+/g, "").replace(/\(.*?\)/g, "").replace(/고등학교$/, "고").replace(/중학교$/, "중").replace(/초등학교$/, "초").replace(/유치원$/, "유").toLowerCase();
+
+/* 시트 한 줄을 찾는다 — 단계별로 좁혀간다.
+   같은 학교가 두 번 나오면 점검종류·동 이름·FMS 로 갈라낸다. */
+function matchSheetRow(site, rows, saved) {
+  const memo = saved && saved[site.id];
+  if (memo === "none") return {
+    row: null,
+    by: "앱 전용"
+  };
+  if (memo) {
+    const hit = rows.find(r => String(r.row) === String(memo));
+    if (hit) return {
+      row: hit,
+      by: "지정됨"
+    };
+  }
+  let c = rows.filter(r => normName(r.school) === normName(site.school) && (!site.region || !r.region || String(r.region).trim() === String(site.region).trim()));
+  if (!c.length) return {
+    row: null,
+    by: "시트에 없음",
+    cands: []
+  };
+  if (c.length === 1) return {
+    row: c[0],
+    by: "지역+학교명"
+  };
+  const kinds = [...new Set((site.buildings || []).map(b => bldKind(b)).filter(Boolean))];
+  if (kinds.length) {
+    const c2 = c.filter(r => kinds.some(k => String(r.kind || "").includes(k)));
+    if (c2.length === 1) return {
+      row: c2[0],
+      by: "+ 점검종류"
+    };
+    if (c2.length) c = c2;
+  }
+  const bn = (site.buildings || []).map(b => normName(b.b)).filter(Boolean);
+  if (bn.length) {
+    const c3 = c.filter(r => (r.buildings || []).some(rb => bn.includes(normName(rb.b))));
+    if (c3.length === 1) return {
+      row: c3[0],
+      by: "+ 동 이름"
+    };
+    if (c3.length) c = c3;
+  }
+  const fms = (site.buildings || []).map(b => b.fms).filter(Boolean)[0];
+  if (fms) {
+    const c4 = c.filter(r => r.fmsId && String(fms).includes(r.fmsId));
+    if (c4.length === 1) return {
+      row: c4[0],
+      by: "+ FMS"
+    };
+  }
+  return {
+    row: null,
+    by: "여러 건",
+    cands: c
+  };
+}
 
 /* 메모 일정 종류 — 현장 점검과 구분되는 부가 일정 */
 const NOTE_KINDS = [{
@@ -11746,6 +11816,12 @@ function SafetyPanel({
   })());
 }
 function SettingsPage({
+  sheetMatch,
+  sheetErr,
+  sheetBusy,
+  sheetAt,
+  onSheetReload,
+  onSheetPick,
   cfgVer,
   logs,
   editor,
@@ -12221,6 +12297,185 @@ function SettingsPage({
     saveNow: saveNow,
     isMobile: isMobile
   }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: C.surface,
+      border: BD,
+      borderRadius: 12,
+      padding: "16px 18px",
+      marginBottom: 12
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+      marginBottom: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 15,
+      fontWeight: 800,
+      color: C.t1
+    }
+  }, "🔗 구글 시트 연동"), /*#__PURE__*/React.createElement("button", {
+    onClick: onSheetReload,
+    disabled: sheetBusy,
+    style: {
+      marginLeft: "auto",
+      padding: "6px 12px",
+      borderRadius: 7,
+      border: BD,
+      background: C.surfaceL,
+      color: C.t2,
+      fontSize: 12,
+      fontWeight: 800,
+      cursor: sheetBusy ? "default" : "pointer"
+    }
+  }, sheetBusy ? "확인 중…" : "⟳ 새로고침")), sheetErr ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: 11,
+      borderRadius: 8,
+      background: C.redL,
+      border: `1px solid ${C.red}40`,
+      color: C.red,
+      fontSize: 13,
+      fontWeight: 700
+    }
+  }, "시트를 읽지 못했습니다 — ", sheetErr) : !sheetMatch ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      color: C.t3
+    }
+  }, "시트를 불러오는 중입니다…") : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: 8,
+      marginBottom: 10,
+      flexWrap: "wrap"
+    }
+  }, [["시트 현장", sheetMatch.total, C.blue], ["연동됨", sheetMatch.matched, C.green], ["확인 필요", sheetMatch.unmatched.length, sheetMatch.unmatched.length ? C.orange : C.t4]].map(([lab, n, col]) => /*#__PURE__*/React.createElement("div", {
+    key: lab,
+    style: {
+      flex: 1,
+      minWidth: 90,
+      padding: "9px 11px",
+      borderRadius: 8,
+      background: col + "12",
+      border: `1px solid ${col}35`
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: C.t3,
+      fontWeight: 700
+    }
+  }, lab), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 19,
+      fontWeight: 900,
+      color: col
+    }
+  }, n)))), sheetAt > 0 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: C.t4,
+      marginBottom: 10
+    }
+  }, "마지막 확인 ", new Date(sheetAt).toLocaleTimeString("ko-KR"), " · 5분마다 자동으로 다시 봅니다"), sheetMatch.unmatched.length === 0 ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: 11,
+      borderRadius: 8,
+      background: C.greenL,
+      border: `1px solid ${C.green}35`,
+      color: C.green,
+      fontSize: 13,
+      fontWeight: 700
+    }
+  }, "✓ 모든 현장이 시트와 짝지어졌습니다") : /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      fontWeight: 800,
+      color: C.orange,
+      marginBottom: 7
+    }
+  }, "⚠ 짝을 못 찾은 현장 ", sheetMatch.unmatched.length, "건"), sheetMatch.unmatched.slice(0, 30).map(u => /*#__PURE__*/React.createElement("div", {
+    key: u.site.id,
+    style: {
+      border: BD,
+      borderLeft: `3px solid ${C.orange}`,
+      borderRadius: 8,
+      padding: "10px 11px",
+      marginBottom: 6,
+      background: C.surfaceL
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 7,
+      marginBottom: 6
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 14,
+      fontWeight: 800,
+      color: C.t1
+    }
+  }, u.site.region ? u.site.region + " " : "", u.site.school), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 11,
+      fontWeight: 800,
+      color: C.orange,
+      background: C.orangeL,
+      border: `1px solid ${C.orange}40`,
+      borderRadius: 4,
+      padding: "2px 7px"
+    }
+  }, u.by)), u.cands && u.cands.length > 0 ? /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: C.t3,
+      marginBottom: 6
+    }
+  }, "시트에 같은 학교가 ", u.cands.length, "건 있습니다. 어느 것인지 골라주세요."), u.cands.map(r => /*#__PURE__*/React.createElement("button", {
+    key: r.row,
+    onClick: () => onSheetPick(u.site.id, String(r.row)),
+    style: {
+      display: "block",
+      width: "100%",
+      textAlign: "left",
+      padding: "8px 10px",
+      marginBottom: 4,
+      borderRadius: 7,
+      border: BD,
+      background: C.surface,
+      cursor: "pointer",
+      fontSize: 12,
+      color: C.t2
+    }
+  }, /*#__PURE__*/React.createElement("b", {
+    style: {
+      color: C.t1
+    }
+  }, "No.", r.no || "-"), " · ", r.kind || "종류 없음", " · 조사 ", r.field || "-", " · ", (r.buildings || []).length, "동"))) : /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 12,
+      color: C.t3
+    }
+  }, "시트에서 같은 이름을 찾지 못했습니다. 시트의 학교명과 다를 수 있습니다."), /*#__PURE__*/React.createElement("button", {
+    onClick: () => onSheetPick(u.site.id, "none"),
+    style: {
+      marginTop: 5,
+      padding: "6px 11px",
+      borderRadius: 7,
+      border: BD,
+      background: "transparent",
+      color: C.t3,
+      fontSize: 11,
+      fontWeight: 700,
+      cursor: "pointer"
+    }
+  }, "이 현장은 앱에서만 관리")))))), /*#__PURE__*/React.createElement("div", {
     style: {
       background: C.surface,
       border: BD,
@@ -15929,6 +16184,42 @@ function App() {
   const [cfgVer, setCfgVer] = useState(0); // 인원 설정 갱신 트리거
   const [accounts, setAccounts] = useState({}); // 등록된 인원·계정 (화면 갱신용)
   const [notes, setNotes] = useState([]); // 현장이 아닌 메모 일정
+  const [sheet, setSheet] = useState(null); // 시트에서 받아온 것
+  const [sheetAt, setSheetAt] = useState(0); // 마지막으로 받은 시각
+  const [sheetErr, setSheetErr] = useState(null); // 실패 사유
+  const [sheetBusy, setSheetBusy] = useState(false);
+  const [syncMap, setSyncMap] = useState({}); // 사람이 골라둔 짝짓기
+
+  /* 시트에서 받아오기 — 열 때 + 5분마다 + 새로고침 버튼 */
+  const loadSheet = React.useCallback(async () => {
+    setSheetBusy(true);
+    setSheetErr(null);
+    try {
+      const res = await fetch(`${SHEET_URL}?key=${encodeURIComponent(SHEET_KEY)}`);
+      const j = await res.json();
+      if (!j || !j.ok) throw new Error(j && j.error || "시트를 읽지 못했습니다");
+      setSheet(j);
+      setSheetAt(Date.now());
+    } catch (e) {
+      setSheetErr(e && e.message || String(e));
+    }
+    setSheetBusy(false);
+  }, []);
+
+  useEffect(() => {
+    loadSheet();
+    const t = setInterval(loadSheet, 5 * 60 * 1000);
+    return () => clearInterval(t);
+  }, [loadSheet]);
+
+  /* 사람이 골라둔 짝짓기 기억 */
+  useEffect(() => {
+    if (!authUser || typeof firebase === "undefined" || !firebase.apps.length) return;
+    const r = firebase.database().ref(FB_SYNC);
+    const on = sn => setSyncMap(sn.val() || {});
+    r.on("value", on, () => setSyncMap({}));
+    return () => r.off("value", on);
+  }, [authUser]);
   const [kakaoKey, setKakaoKey] = useState(""); // 지도(카카오맵) 키 — 설정에 저장
   const [logs, setLogs] = useState([]); // 수정 로그
 
@@ -16401,6 +16692,32 @@ function App() {
     })));
     return list;
   }, [db]);
+
+  /* 시트와 짝지은 결과 — 어느 현장이 시트 몇 행에 붙는지 */
+  const sheetMatch = useMemo(() => {
+    if (!sheet || !sheet.sites) return null;
+    const rows = sheet.sites;
+    const map = {},
+      unmatched = [];
+    allSchools.forEach(s => {
+      const m = matchSheetRow(s, rows, syncMap);
+      if (m.row) map[s.id] = {
+        row: m.row,
+        by: m.by
+      };else if (m.by !== "앱 전용") unmatched.push({
+        site: s,
+        by: m.by,
+        cands: m.cands || []
+      });
+    });
+    return {
+      map,
+      unmatched,
+      total: rows.length,
+      matched: Object.keys(map).length
+    };
+  }, [sheet, allSchools, syncMap]);
+
   const urgent = allSchools.filter(s => {
     const d = calcDday(s.end);
     return d !== null && d < 0 && d >= -7;
@@ -16447,6 +16764,18 @@ function App() {
       notes: notes
     }),
     settings: canSettings && /*#__PURE__*/React.createElement(SettingsPage, {
+      sheetMatch: sheetMatch,
+      sheetErr: sheetErr,
+      sheetBusy: sheetBusy,
+      sheetAt: sheetAt,
+      onSheetReload: loadSheet,
+      onSheetPick: (siteId, rowNo) => {
+        try {
+          firebase.database().ref(`${FB_SYNC}/${siteId}`).set(rowNo);
+        } catch (e) {
+          window.alert("저장 실패: " + (e && e.message || e));
+        }
+      },
       cfgVer: cfgVer,
       logs: logs,
       editor: editor,
@@ -16778,7 +17107,58 @@ function App() {
       paddingTop: 8,
       borderTop: BD
     }
-  }, authUser.email && /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("div", {
+    onClick: loadSheet,
+    title: sheetErr || "눌러서 새로고침",
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 6,
+      padding: "7px 9px",
+      marginBottom: 7,
+      borderRadius: 7,
+      cursor: "pointer",
+      background: sheetErr ? C.redL : C.surfaceL,
+      border: `1px solid ${sheetErr ? C.red + "40" : C.border}`,
+      fontSize: 11,
+      color: sheetErr ? C.red : C.t3,
+      fontWeight: 700
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      width: 6,
+      height: 6,
+      borderRadius: "50%",
+      flexShrink: 0,
+      background: sheetBusy ? C.orange : sheetErr ? C.red : C.green
+    }
+  }), /*#__PURE__*/React.createElement("span", {
+    style: {
+      flex: 1,
+      minWidth: 0,
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap"
+    }
+  }, sheetBusy ? "시트 확인 중…" : sheetErr ? "시트 연결 실패" : sheetMatch ? `시트 ${sheetMatch.matched}/${allSchools.length} 연동` : "시트 대기 중"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 12,
+      opacity: .8
+    }
+  }, "⟳")), sheetMatch && sheetMatch.unmatched.length > 0 && /*#__PURE__*/React.createElement("div", {
+    onClick: () => setMenuRaw("settings"),
+    style: {
+      padding: "6px 9px",
+      marginBottom: 7,
+      borderRadius: 7,
+      cursor: "pointer",
+      background: C.orangeL,
+      border: `1px solid ${C.orange}40`,
+      fontSize: 11,
+      color: C.orange,
+      fontWeight: 800
+    }
+  }, "⚠ 짝을 못 찾은 현장 ", sheetMatch.unmatched.length), authUser.email && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 11,
       color: C.t4,
@@ -17044,3 +17424,4 @@ ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(
 </script>
 </body>
 </html>
+  
