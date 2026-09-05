@@ -26,6 +26,7 @@
   });
 </script>
 <style>
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
   html,body,#root{margin:0;padding:0;height:100%;}
   body{font-family:'Pretendard','Apple SD Gothic Neo','Noto Sans KR',sans-serif;-webkit-text-size-adjust:100%;line-height:1.5;}
   #boot{display:flex;align-items:center;justify-content:center;height:100vh;flex-direction:column;gap:14px;color:#8A94A6;background:#F0F2F5;}
@@ -16197,26 +16198,51 @@ function App() {
   const [syncMap, setSyncMap] = useState({}); // 사람이 골라둔 짝짓기
 
   /* 시트에서 받아오기 — 열 때 + 5분마다 + 새로고침 버튼 */
+  const sheetPending = useRef(false); // 이미 부르는 중인지
   const loadSheet = React.useCallback(async () => {
+    /* 앞 요청이 안 끝났으면 건너뛴다 — 겹쳐 부르면 느려지고 순서가 꼬인다 */
+    if (sheetPending.current) return;
+    sheetPending.current = true;
     setSheetBusy(true);
     setSheetErr(null);
+
+    /* 20초 안에 답이 없으면 포기한다 (인터넷이 끊겼을 때 매달리지 않도록) */
+    const ac = typeof AbortController !== "undefined" ? new AbortController() : null;
+    const timer = ac ? setTimeout(() => ac.abort(), 20000) : null;
     try {
-      const res = await fetch(`${SHEET_URL}?key=${encodeURIComponent(SHEET_KEY)}`);
+      const res = await fetch(`${SHEET_URL}?key=${encodeURIComponent(SHEET_KEY)}&t=${Date.now()}`, ac ? {
+        signal: ac.signal
+      } : undefined);
+      if (!res.ok) throw new Error(`시트 서버 응답 ${res.status}`);
       const j = await res.json();
       if (!j || !j.ok) throw new Error(j && j.error || "시트를 읽지 못했습니다");
+      if (!Array.isArray(j.sites)) throw new Error("시트 내용이 올바르지 않습니다");
       setSheet(j);
       setSheetAt(Date.now());
     } catch (e) {
-      setSheetErr(e && e.message || String(e));
+      const msg = e && e.name === "AbortError" ? "시트 응답이 너무 늦습니다 (20초 초과)" : e && e.message || String(e);
+      setSheetErr(msg);
     }
+    if (timer) clearTimeout(timer);
+    sheetPending.current = false;
     setSheetBusy(false);
   }, []);
 
+  /* 로그인한 뒤에만 시트를 부른다 */
   useEffect(() => {
+    if (!authUser) return;
     loadSheet();
     const t = setInterval(loadSheet, 5 * 60 * 1000);
-    return () => clearInterval(t);
-  }, [loadSheet]);
+    /* 다른 창을 보다 돌아오면 한 번 더 확인 — 오래 잠들어 있었을 수 있다 */
+    const onWake = () => {
+      if (!document.hidden) loadSheet();
+    };
+    document.addEventListener("visibilitychange", onWake);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", onWake);
+    };
+  }, [loadSheet, authUser]);
 
   /* 사람이 골라둔 짝짓기 기억 */
   useEffect(() => {
@@ -17409,7 +17435,32 @@ function App() {
     style: {
       flex: 1
     }
-  }), !isMobile && /*#__PURE__*/React.createElement("div", {
+  }), /*#__PURE__*/React.createElement("button", {
+    onClick: loadSheet,
+    disabled: sheetBusy,
+    title: sheetErr ? "시트 연결 실패 — " + sheetErr : sheetAt ? "마지막 확인 " + new Date(sheetAt).toLocaleTimeString("ko-KR") + " · 눌러서 지금 받기" : "시트에서 최신 내용 받기",
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 5,
+      padding: isMobile ? "6px 9px" : "6px 12px",
+      marginRight: 7,
+      borderRadius: 8,
+      cursor: sheetBusy ? "default" : "pointer",
+      border: `1.5px solid ${sheetErr ? C.red + "50" : C.border}`,
+      background: sheetErr ? C.redL : C.surface,
+      color: sheetErr ? C.red : C.t2,
+      fontSize: 13,
+      fontWeight: 700,
+      whiteSpace: "nowrap"
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: "inline-block",
+      fontSize: 14,
+      animation: sheetBusy ? "spin 1s linear infinite" : "none"
+    }
+  }, "⟳"), isMobile ? null : sheetBusy ? "받는 중…" : sheetErr ? "시트 실패" : "시트 새로고침"), !isMobile && /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12,
       color: C.t3
