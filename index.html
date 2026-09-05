@@ -1569,6 +1569,65 @@ function Pill({
 }
 
 /* 8단계 진행바 (목록용 컴팩트 / 상세용) */
+/* 워크플로우 16단계 점 표시 — 시트가 주인, 앱은 보여주기만.
+   가로 점 16개 · 완료는 파랑, 현재 위치는 테두리, 나머지 회색 */
+function Flow16Bar({
+  flow,
+  compact
+}) {
+  const {
+    arr,
+    done,
+    pos
+  } = flowProgress(flow || {});
+  const sz = compact ? 9 : 12;
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: compact ? 3 : 5,
+      flexWrap: "wrap"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      gap: compact ? 2 : 3,
+      alignItems: "center"
+    }
+  }, FLOW16.map((k, i) => {
+    const on = arr[i];
+    const cur = !on && i === pos; /* 다음 할 일 */
+    return /*#__PURE__*/React.createElement("div", {
+      key: k,
+      title: `${i + 1}. ${k}${on ? " ✓" : cur ? " ← 다음" : ""}`,
+      style: {
+        width: sz,
+        height: sz,
+        borderRadius: "50%",
+        background: on ? C.blue : cur ? C.surface : C.surfaceD,
+        border: cur ? `2px solid ${C.blue}` : on ? `1px solid ${C.blue}` : `1px solid ${C.border}`,
+        boxSizing: "border-box",
+        flexShrink: 0
+      }
+    });
+  })), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: compact ? 9 : 11,
+      fontWeight: 800,
+      color: done === 16 ? C.green : C.t2,
+      marginLeft: 3,
+      whiteSpace: "nowrap"
+    }
+  }, done, "/16", !compact && pos < 16 && /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 10,
+      fontWeight: 600,
+      color: C.blue,
+      marginLeft: 5
+    }
+  }, "→ ", FLOW16_LABEL[FLOW16[pos]] || FLOW16[pos])));
+}
+
 function StepBar({
   progress,
   compact
@@ -6113,7 +6172,8 @@ function LI({
   col,
   list,
   placeholder,
-  hint
+  hint,
+  locked
 }) {
   return /*#__PURE__*/React.createElement("div", {
     style: {
@@ -6127,21 +6187,32 @@ function LI({
       color: C.t3,
       fontWeight: 700
     }
-  }, label), /*#__PURE__*/React.createElement("input", {
+  }, label, locked && /*#__PURE__*/React.createElement("span", {
+    style: {
+      marginLeft: 6,
+      fontSize: 10,
+      color: C.t4,
+      fontWeight: 600
+    }
+  }, "🔒 시트에서 관리")), /*#__PURE__*/React.createElement("input", {
     type: type,
     value: val,
     list: list,
     placeholder: placeholder,
-    onChange: e => on(e.target.value),
+    readOnly: !!locked,
+    disabled: !!locked,
+    title: locked ? "이 값은 스프레드시트에서 고칩니다. 앱에서는 볼 수만 있습니다." : undefined,
+    onChange: e => !locked && on(e.target.value),
     style: {
       padding: "7px 9px",
-      background: C.surfaceL,
+      background: locked ? C.bg : C.surfaceL,
       border: BD,
       borderRadius: 6,
-      color: col || C.t1,
+      color: locked ? C.t4 : col || C.t1,
       fontSize: 13,
       outline: "none",
-      width: "100%"
+      width: "100%",
+      cursor: locked ? "not-allowed" : undefined
     }
   }), hint && /*#__PURE__*/React.createElement("span", {
     style: {
@@ -6547,6 +6618,8 @@ function EditPanel({
   isNew
 }) {
   const isMobile = useIsMobile();
+  /* 시트와 연동된 현장이면 착수·완수일을 잠근다 (시트가 주인) */
+  const sheetLinked = !isNew && typeof window.__stonSheetLinked === "function" && window.__stonSheetLinked(sc.id);
   const [nameErr, setNameErr] = useState("");
   /* 현장조사가 며칠에 걸칠 때만 펼친다 (기본은 하루) */
   const [multiOpen, setMultiOpen] = useState(!!(sc.fieldEnd || (sc.fieldExtra || []).length));
@@ -7014,7 +7087,8 @@ function EditPanel({
       start: v
     })),
     type: "date",
-    col: C.green
+    col: C.green,
+    locked: sheetLinked
   }), /*#__PURE__*/React.createElement("div", {
     style: {
       gridColumn: "span 2",
@@ -7132,7 +7206,8 @@ function EditPanel({
       end: v
     })),
     type: "date",
-    col: C.orange
+    col: C.orange,
+    locked: sheetLinked
   }), /*#__PURE__*/React.createElement("div", {
     style: {
       gridColumn: "span 2",
@@ -7208,7 +7283,21 @@ function EditPanel({
       fontWeight: 700,
       color: C.t2
     }
-  }, "📋 업무 진행 단계"), /*#__PURE__*/React.createElement("div", {
+  }, "📋 업무 진행 단계", sheetLinked && /*#__PURE__*/React.createElement("span", {
+    style: {
+      marginLeft: 6,
+      fontSize: 10,
+      color: C.t4,
+      fontWeight: 600
+    }
+  }, "🔒 시트에서 관리")), sheetLinked && sc.flow ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginLeft: "auto",
+      fontSize: 14,
+      fontWeight: 800,
+      color: flowProgress(sc.flow).done === 16 ? C.green : tc.a
+    }
+  }, flowProgress(sc.flow).done, "/16") : /*#__PURE__*/React.createElement("div", {
     style: {
       marginLeft: "auto",
       fontSize: 14,
@@ -7222,7 +7311,74 @@ function EditPanel({
       marginLeft: 4,
       fontWeight: 600
     }
-  }, Math.round(progDone / STEPS.length * 100), "%"))), /*#__PURE__*/React.createElement("div", {
+  }, Math.round(progDone / STEPS.length * 100), "%"))), /*#__PURE__*/sheetLinked && sc.flow ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginBottom: 12
+    }
+  }, /*#__PURE__*/React.createElement(Flow16Bar, {
+    flow: sc.flow
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gridTemplateColumns: "repeat(2,1fr)",
+      gap: 7
+    }
+  }, [["📝 준비", ["계약서발송", "착수계발송", "앱야장작성"]], ["📍 현장", ["현장조사", "야장엑셀화", "체크리스트"]], ["📄 보고서", ["부록작업", "워드생성", "워드수정", "PDF"]], ["🔍 검수", ["검토", "검수", "제본"]], ["📦 마무리", ["납품", "완수계발송", "계산서발행"]]].map(([grp, keys]) => /*#__PURE__*/React.createElement("div", {
+    key: grp,
+    style: {
+      padding: "9px 11px",
+      borderRadius: 8,
+      background: C.surface,
+      border: BD
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      fontWeight: 800,
+      color: C.t3,
+      marginBottom: 6
+    }
+  }, grp), keys.map(k => {
+    const on = flowDone(sc.flow[k]);
+    const v = sc.flow[k];
+    const isDate = typeof v === "string" && /\d{4}/.test(v);
+    return /*#__PURE__*/React.createElement("div", {
+      key: k,
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 7,
+        padding: "3px 0",
+        fontSize: 12,
+        color: on ? C.t1 : C.t4
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        width: 14,
+        height: 14,
+        borderRadius: "50%",
+        background: on ? C.blue : "transparent",
+        border: `1.5px solid ${on ? C.blue : C.border}`,
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        color: "#fff",
+        fontSize: 9,
+        fontWeight: 900,
+        flexShrink: 0
+      }
+    }, on ? "✓" : ""), /*#__PURE__*/React.createElement("span", {
+      style: {
+        fontWeight: on ? 700 : 500
+      }
+    }, k), isDate && /*#__PURE__*/React.createElement("span", {
+      style: {
+        marginLeft: "auto",
+        fontSize: 10,
+        color: C.t4
+      }
+    }, (v.match(/(\d{4})-(\d{2})-(\d{2})/) || [])[0] || ""));
+  }))))) : /*#__PURE__*/React.createElement(React.Fragment, null, React.createElement("div", {
     style: {
       display: "flex",
       gap: 3,
@@ -7309,7 +7465,7 @@ function EditPanel({
         borderRadius: 3
       }
     }, "중요"));
-  })), /*#__PURE__*/React.createElement("div", {
+  }))), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 12,
       color: C.t4,
@@ -9021,10 +9177,13 @@ function SitesManager({
         paddingLeft: 19
       },
       onClick: e => e.stopPropagation()
-    }, /*#__PURE__*/React.createElement(StepBar, {
+    }, /*#__PURE__*/(s.flow ? /*#__PURE__*/React.createElement(Flow16Bar, {
+      flow: s.flow,
+      compact: true
+    }) : /*#__PURE__*/React.createElement(StepBar, {
       progress: s.progress,
       compact: true
-    }), [{
+    })), [{
       k: "보고서",
       v: repAll,
       c: C.purple
@@ -9265,10 +9424,13 @@ function SitesManager({
         paddingLeft: 19
       },
       onClick: e => e.stopPropagation()
-    }, /*#__PURE__*/React.createElement(StepBar, {
+    }, /*#__PURE__*/(s.flow ? /*#__PURE__*/React.createElement(Flow16Bar, {
+      flow: s.flow,
+      compact: true
+    }) : /*#__PURE__*/React.createElement(StepBar, {
       progress: s.progress,
       compact: true
-    }), (() => {
+    })), (() => {
       const pg = s.progress || {};
       const chip = (label, on, col) => /*#__PURE__*/React.createElement("span", {
         style: {
@@ -10679,6 +10841,42 @@ const SHEET_KEY = "ston2026";
 /* 시트가 담고 있는 반기 — 이 반기 현장만 연동한다.
    시트가 26년(하) 하나뿐이라, 다른 반기까지 맞추면
    상반기 값이 하반기 행에 잘못 써지는 사고가 난다. */
+/* 워크플로우 시트의 16단계 — 시트가 주인, 앱은 보여주기만 */
+const FLOW16 = ["계약서발송", "착수계발송", "앱야장작성", "현장조사", "야장엑셀화", "체크리스트", "부록작업", "워드생성", "워드수정", "PDF", "검토", "검수", "제본", "납품", "완수계발송", "계산서발행"];
+const FLOW16_LABEL = {
+  계약서발송: "계약서",
+  착수계발송: "착수계",
+  앱야장작성: "야장",
+  현장조사: "조사",
+  야장엑셀화: "엑셀",
+  체크리스트: "체크",
+  부록작업: "부록",
+  워드생성: "워드",
+  워드수정: "수정",
+  PDF: "PDF",
+  검토: "검토",
+  검수: "검수",
+  제본: "제본",
+  납품: "납품",
+  완수계발송: "완수계",
+  계산서발행: "계산서"
+};
+/* 단계 값이 "됐다"로 볼 수 있는지 — 체크박스 true 또는 날짜/글자가 있으면 */
+const flowDone = v => v === true || typeof v === "string" && v.trim() !== "" && v !== "false" && v !== "FALSE";
+/* 워크플로우 한 줄 → {done: 개수, pos: 연속완료 위치, arr: 16개 true/false} */
+const flowProgress = st => {
+  const arr = FLOW16.map(k => flowDone(st && st[k]));
+  let pos = 0;
+  for (const b of arr) {
+    if (b) pos++;else break;
+  }
+  return {
+    arr,
+    done: arr.filter(Boolean).length,
+    pos
+  };
+};
+
 const SHEET_YEAR = "2026";
 const SHEET_HALF = "하반기";
 
@@ -16926,9 +17124,64 @@ function App() {
     setIncoming(toGet);
   }, [sheetMatch, allSchools]);
 
+  /* 시트가 주인인 항목은 시트 값을 앱에 자동으로 덮어쓴다.
+     착수일·완수일·계약일·특이사항·점검종류·지역·워크플로우 16단계.
+     조사일은 앱이 주인이라 여기서 건드리지 않는다. */
+  useEffect(() => {
+    if (!sheetMatch || !sheet) return;
+    const flow = sheet.flow || {};
+    const patch = {}; /* id → 바꿀 값 */
+    allSchools.forEach(s => {
+      const m = sheetMatch.map[s.id];
+      if (!m) return;
+      const r = m.row;
+      const fl = flow[`${r.region}|${r.school}`];
+      const next = {};
+      if ((r.start || "") !== (s.start || "")) next.start = r.start || "";
+      if ((r.end || "") !== (s.end || "")) next.end = r.end || "";
+      if ((r.contract || "") !== (s.contract || "")) next.contract = r.contract || "";
+      if ((r.memo || "") !== (s.memo || "")) next.memo = r.memo || "";
+      if (r.region && r.region !== (s.region || "")) next.region = r.region;
+      /* 워크플로우 16단계 — 시트 값 그대로 보관 */
+      const fs = fl ? fl.steps || {} : null;
+      if (fs && JSON.stringify(fs) !== JSON.stringify(s.flow || {})) next.flow = fs;
+      if (Object.keys(next).length) patch[s.id] = next;
+    });
+    if (!Object.keys(patch).length) return;
+    setDb(prev => {
+      const out = {
+        ...prev
+      };
+      let changed = false;
+      Object.entries(prev).forEach(([yr, halves]) => {
+        Object.entries(halves || {}).forEach(([half, list]) => {
+          const arr = toArr(list);
+          let touched = false;
+          const nl = arr.map(x => {
+            if (!x || !patch[x.id]) return x;
+            touched = true;
+            return stampEdit({
+              ...x,
+              ...patch[x.id]
+            }, "시트에서 자동 반영");
+          });
+          if (touched) {
+            out[yr] = {
+              ...(out[yr] || {})
+            };
+            out[yr][half] = nl;
+            changed = true;
+          }
+        });
+      });
+      return changed ? out : prev;
+    });
+  }, [sheet, sheetMatch]); // eslint-disable-line
+
   /* 앱에서 현장을 지우면 시트의 조사일도 비운다.
      현장은 시트에 남기되(착수·완수·FMS 등은 시트가 주인) 조사 일정만 취소됐음을 알린다. */
   useEffect(() => {
+    window.__stonSheetLinked = siteId => !!(sheetMatch && sheetMatch.map[siteId]);
     window.__stonClearSheetField = async siteId => {
       if (!sheetMatch) return;
       const m = sheetMatch.map[siteId];
@@ -16943,6 +17196,7 @@ function App() {
     };
     return () => {
       delete window.__stonClearSheetField;
+      delete window.__stonSheetLinked;
     };
   }, [sheetMatch, pushToSheet]);
 
