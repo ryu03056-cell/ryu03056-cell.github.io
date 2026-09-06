@@ -4374,7 +4374,7 @@ function DayPanel({
       setPickOpen(false);
       setNoteOpen(false);
       setNoteEdit(null);
-      addSiteHere();
+      showToast("현장은 스프레드시트에 추가하면 5분 안에 앱에 자동으로 생깁니다");
     },
     style: {
       flex: 1,
@@ -4390,7 +4390,7 @@ function DayPanel({
       whiteSpace: "nowrap",
       boxShadow: `0 2px 8px ${C.blue}35`
     }
-  }, "+ 현장 추가"), /*#__PURE__*/React.createElement("button", {
+  }, "시트에서 추가"), /*#__PURE__*/React.createElement("button", {
     onClick: () => {
       setNoteOpen(false);
       setNoteEdit(null);
@@ -8889,7 +8889,8 @@ function SitesManager({
       whiteSpace: "nowrap"
     }
   }, "📋 반기 복사"), /*#__PURE__*/React.createElement("button", {
-    onClick: addNewSite,
+    onClick: () => showToast("현장은 스프레드시트에 추가하면 5분 안에 앱에 자동으로 생깁니다"),
+    title: "시트가 주인 — 앱에서는 만들지 않습니다",
     style: {
       flex: isMobile ? 1 : "none",
       padding: "10px 16px",
@@ -8903,7 +8904,7 @@ function SitesManager({
       whiteSpace: "nowrap",
       boxShadow: `0 3px 10px ${C.blue}33`
     }
-  }, "+ 현장 추가"))), /*#__PURE__*/React.createElement("div", {
+  }, "📄 시트에서 추가"))), /*#__PURE__*/React.createElement("div", {
     style: {
       background: C.surface,
       border: BD,
@@ -10907,6 +10908,65 @@ const SHEET_HALF = "하반기";
 
 /* 학교 이름을 견줄 수 있게 다듬는다 — 고등학교↔고, 띄어쓰기 차이 흡수 */
 const normName = v => String(v || "").replace(/\s+/g, "").replace(/\(.*?\)/g, "").replace(/고등학교$/, "고").replace(/중학교$/, "중").replace(/초등학교$/, "초").replace(/유치원$/, "유").toLowerCase();
+
+/* 시트 한 줄 → 앱 현장 하나. 시트에 있는 것만 채우고 인원·납품일·여러 날 등은 비워둔다 */
+function siteFromSheetRow(r, flowSteps, yr, half) {
+  const kindOf = k => {
+    const t = String(k || "");
+    for (const bk of BKINDS) if (t.includes(bk.v)) return bk.v;
+    return "정기";
+  };
+  const blds = (r.buildings || []).map(b => ({
+    b: b.b || "",
+    cat: /옹벽|교량|터널|축대|담장/.test(b.b || "") ? "토목종" : "건축",
+    kind: kindOf(b.kind || r.kind),
+    floor: b.floor || null,
+    area: b.area ?? null,
+    len: b.len ?? null,
+    height: b.height ?? null,
+    jong: b.jong || null,
+    fms: r.fmsId || null,
+    flag: null,
+    note: null,
+    rep: false,
+    fmsD: false,
+    delivery: null
+  }));
+  return {
+    id: newId(),
+    school: r.school || "",
+    no: r.no || "",
+    region: r.region || "",
+    kind: kindOf(r.kind) === "정기" ? "정기점검" : `${kindOf(r.kind)}점검`,
+    memo: r.memo || "",
+    contract: r.contract || "",
+    start: r.start || "",
+    field: r.field || "",
+    end: r.end || "",
+    headcount: 1,
+    assignees: [],
+    /* 신규 여부는 시트 A열의 "신규" 로 정한다 */
+    isNew: !!r.isNew,
+    tentative: true,
+    progress: {},
+    flow: flowSteps || {},
+    buildings: blds.length ? blds : [{
+      b: "본관",
+      cat: "건축",
+      kind: kindOf(r.kind),
+      floor: null,
+      area: null,
+      fms: r.fmsId || null,
+      flag: null,
+      note: null,
+      rep: false,
+      fmsD: false,
+      delivery: null
+    }],
+    fromSheet: true,
+    createdAt: Date.now()
+  };
+}
 
 /* 시트 한 줄을 찾는다 — 단계별로 좁혀간다.
    같은 학교가 두 번 나오면 점검종류·동 이름·FMS 로 갈라낸다. */
@@ -17108,13 +17168,48 @@ function App() {
       }
       if (Object.keys(next).length) patch[s.id] = next;
     });
-    if (!Object.keys(patch).length) return;
+    /* ── 시트에만 있고 앱에 없는 현장 → 앱에 새로 만든다 ──
+       · 이미 짝지어진 시트 행은 건너뛴다
+       · 앱에 이름이 비슷한 현장(휴지통 포함)이 있으면 만들지 않는다 → 사람이 설정에서 연결
+       · "앱 전용" 으로 지정된 것도 건너뛴다 */
+    const takenRows = new Set(Object.values(sheetMatch.map).map(m => String(m.row.row)));
+    const allNames = new Set();
+    Object.values(db).forEach(hs => Object.values(hs || {}).forEach(list => toArr(list).forEach(x => {
+      if (x && x.school) allNames.add(normName(x.school));
+    })));
+    const toCreate = [];
+    sheet.sites.forEach(r => {
+      if (takenRows.has(String(r.row))) return;
+      if (!r.school) return;
+      if (allNames.has(normName(r.school))) return; /* 이름이 비슷한 게 있다 → 사람이 연결 */
+      const fl = flow[`${r.region}|${r.school}`];
+      toCreate.push(siteFromSheetRow(r, fl ? fl.steps : null, SHEET_YEAR, SHEET_HALF));
+    });
+    if (toCreate.length) {
+      setSheetChanges(prev => [...toCreate.map(c => ({
+        kind: "새로 추가",
+        school: `${c.region} ${c.school}`.trim(),
+        row: "앱에 생성"
+      })), ...prev].slice(0, 200));
+      logAction("추가", `시트에서 새 현장 ${toCreate.length}건 자동 생성`, null, toCreate.map(c => c.school).join(", "));
+    }
+
+    if (!Object.keys(patch).length && !toCreate.length) return;
 
     setDb(prev => {
       const out = {
         ...prev
       };
       let changed = false;
+      /* 새 현장 붙이기 */
+      if (toCreate.length) {
+        out[SHEET_YEAR] = {
+          ...(out[SHEET_YEAR] || {})
+        };
+        const cur = toArr(out[SHEET_YEAR][SHEET_HALF]);
+        out[SHEET_YEAR][SHEET_HALF] = [...cur, ...toCreate];
+        changed = true;
+      }
       Object.entries(prev).forEach(([yr, halves]) => {
         Object.entries(halves || {}).forEach(([half, list]) => {
           const arr = toArr(list);
