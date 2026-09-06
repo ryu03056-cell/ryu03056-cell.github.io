@@ -17084,8 +17084,17 @@ function App() {
       const fl = flow[`${r.region}|${r.school}`];
       const next = {};
       if ((r.start || "") !== (s.start || "")) next.start = r.start || "";
-      /* 현장조사 첫날 — 시트가 주인. 여러 날(fieldEnd·fieldExtra)과 날짜별 인원은 앱에만 있으니 건드리지 않는다 */
-      if ((r.field || "") !== (s.field || "")) next.field = r.field || "";
+      /* 현장조사 첫날 — 시트가 주인. 여러 날(fieldEnd·fieldExtra)과 날짜별 인원은 앱에만 있으니 건드리지 않는다.
+         다만 첫날이 바뀌어 종료일이 첫날보다 앞서게 되면 종료일은 비운다(뒤집힌 기간은 뜻이 없다).
+         첫날이 "따로 떨어진 날" 목록에 이미 있으면 겹치니 뺀다. */
+      if ((r.field || "") !== (s.field || "")) {
+        const nf = r.field || "";
+        next.field = nf;
+        if (!nf || s.fieldEnd && s.fieldEnd <= nf) next.fieldEnd = "";
+        const ex = toArr(s.fieldExtra).filter(d => d && d !== nf);
+        if (ex.length !== toArr(s.fieldExtra).filter(Boolean).length) next.fieldExtra = ex;
+        /* 날짜별 인원에서 옛 첫날 배정은 그대로 두되, 새 첫날에 배정이 없으면 기본 인원이 쓰인다 (whoOnDate) */
+      }
       if ((r.end || "") !== (s.end || "")) next.end = r.end || "";
       if ((r.contract || "") !== (s.contract || "")) next.contract = r.contract || "";
       if ((r.memo || "") !== (s.memo || "")) next.memo = r.memo || "";
