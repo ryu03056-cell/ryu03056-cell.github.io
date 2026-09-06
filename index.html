@@ -6689,8 +6689,6 @@ function EditPanel({
       return;
     }
     setNameErr("");
-    /* 사람이 앱에서 저장했음을 알린다 — 조사일 방향 판단에 쓰인다 */
-    if (typeof window.__stonUserEdited === "function") window.__stonUserEdited();
     const beforeStr = `${(sc.assignees || []).join(",") || "-"} · 진행 ${STEPS.filter(k => sc.progress && sc.progress[k]).length}/${STEPS.length}`;
     const afterStr = `${f.assignees.join(",") || "-"} · 진행 ${STEPS.filter(k => prog[k]).length}/${STEPS.length}`;
     setDb(prev => {
@@ -6789,8 +6787,6 @@ function EditPanel({
       return next;
     });
     logAction("삭제", `현장 · ${sc.school}`, sc.school, "휴지통으로 이동");
-    /* 시트의 조사일도 비운다 (연동된 현장만) */
-    if (typeof window.__stonClearSheetField === "function") window.__stonClearSheetField(sc.id);
     setConfirmDel(false);
     onClose();
   };
@@ -7119,7 +7115,14 @@ function EditPanel({
     field: f.field,
     fieldEnd: f.fieldEnd,
     fieldExtra: f.fieldExtra
-  }).length}일` : ""), multiOpen && /*#__PURE__*/React.createElement("button", {
+  }).length}일` : "", sheetLinked && /*#__PURE__*/React.createElement("span", {
+    style: {
+      marginLeft: 6,
+      fontSize: 10,
+      color: C.t4,
+      fontWeight: 600
+    }
+  }, "🔒 첫날은 시트에서 관리")), multiOpen && /*#__PURE__*/React.createElement("button", {
     onClick: () => {
       setMultiOpen(false);
       setF(p => ({
@@ -7148,7 +7151,10 @@ function EditPanel({
   }, /*#__PURE__*/React.createElement("input", {
     type: "date",
     value: f.field,
-    onChange: e => setF(p => ({
+    readOnly: sheetLinked,
+    disabled: sheetLinked,
+    title: sheetLinked ? "첫날은 스프레드시트에서 고칩니다. 여러 날은 + 로 앱에서 붙일 수 있습니다." : undefined,
+    onChange: e => !sheetLinked && setF(p => ({
       ...p,
       field: e.target.value
     })),
@@ -7156,12 +7162,13 @@ function EditPanel({
       flex: 1,
       minWidth: 0,
       padding: "7px 9px",
-      background: C.surfaceL,
+      background: sheetLinked ? C.bg : C.surfaceL,
       border: BD,
       borderRadius: 6,
-      color: tc.a,
+      color: sheetLinked ? C.t4 : tc.a,
       fontSize: 13,
-      outline: "none"
+      outline: "none",
+      cursor: sheetLinked ? "not-allowed" : undefined
     }
   }), !multiOpen && /*#__PURE__*/React.createElement("button", {
     onClick: () => setMultiOpen(true),
@@ -8462,6 +8469,12 @@ function SitesManager({
   const schools = useMemo(() => (db[yr]?.[half] || []).filter(s => !s.deleted), [db, yr, half]);
   const updDate = (sid, field, v) => {
     const sc = schools.find(s => s.id === sid);
+    const lblChk = field === "field" ? "현장조사일" : field === "start" ? "착수일" : field === "deliverDate" ? "납품일" : "완수일";
+    /* 시트가 주인인 날짜는 앱에서 못 고친다 (납품일만 앱) */
+    if (field !== "deliverDate" && typeof window.__stonSheetLinked === "function" && window.__stonSheetLinked(sid)) {
+      showToast(`${lblChk}은 스프레드시트에서 고칩니다`);
+      return;
+    }
     const lbl = field === "field" ? "현장조사일" : field === "start" ? "착수일" : field === "deliverDate" ? "납품일" : "완수일";
     setDb(prev => {
       const n = {
@@ -8476,7 +8489,6 @@ function SitesManager({
       }, `${lbl} 변경`));
       return n;
     });
-    if (typeof window.__stonUserEdited === "function") window.__stonUserEdited();
     logAction("수정", `${sc?.school} · ${lbl}`, sc?.[field] || "-", v || "-");
     showToast("날짜 변경됨 · 캘린더 자동 반영");
   };
@@ -9115,8 +9127,10 @@ function SitesManager({
       type: "date",
       value: s.field || "",
       onChange: e => updDate(s.id, "field", e.target.value),
+      disabled: typeof window.__stonSheetLinked === "function" && window.__stonSheetLinked(s.id),
+      title: typeof window.__stonSheetLinked === "function" && window.__stonSheetLinked(s.id) ? "시트에서 관리" : undefined,
       style: {
-        background: C.surface,
+        background: typeof window.__stonSheetLinked === "function" && window.__stonSheetLinked(s.id) ? C.bg : C.surface,
         border: `1px solid ${C.border}`,
         borderRadius: 7,
         color: C.blue,
@@ -9153,8 +9167,10 @@ function SitesManager({
       type: "date",
       value: s.end || "",
       onChange: e => updDate(s.id, "end", e.target.value),
+      disabled: typeof window.__stonSheetLinked === "function" && window.__stonSheetLinked(s.id),
+      title: typeof window.__stonSheetLinked === "function" && window.__stonSheetLinked(s.id) ? "시트에서 관리" : undefined,
       style: {
-        background: C.surface,
+        background: typeof window.__stonSheetLinked === "function" && window.__stonSheetLinked(s.id) ? C.bg : C.surface,
         border: `1px solid ${C.border}`,
         borderRadius: 7,
         color: C.orange,
@@ -9460,8 +9476,10 @@ function SitesManager({
       type: "date",
       value: s.field || "",
       onChange: e => updDate(s.id, "field", e.target.value),
+      disabled: typeof window.__stonSheetLinked === "function" && window.__stonSheetLinked(s.id),
+      title: typeof window.__stonSheetLinked === "function" && window.__stonSheetLinked(s.id) ? "시트에서 관리" : undefined,
       style: {
-        background: "transparent",
+        background: typeof window.__stonSheetLinked === "function" && window.__stonSheetLinked(s.id) ? C.bg : "transparent",
         border: `1px solid ${C.border}`,
         borderRadius: 5,
         color: C.blue,
@@ -9483,8 +9501,10 @@ function SitesManager({
       type: "date",
       value: s.end || "",
       onChange: e => updDate(s.id, "end", e.target.value),
+      disabled: typeof window.__stonSheetLinked === "function" && window.__stonSheetLinked(s.id),
+      title: typeof window.__stonSheetLinked === "function" && window.__stonSheetLinked(s.id) ? "시트에서 관리" : undefined,
       style: {
-        background: "transparent",
+        background: typeof window.__stonSheetLinked === "function" && window.__stonSheetLinked(s.id) ? C.bg : "transparent",
         border: `1px solid ${C.border}`,
         borderRadius: 5,
         color: C.orange,
@@ -10834,9 +10854,11 @@ const FB_NOTES = "ston_test/notes"; // 현장이 아닌 메모 일정 (휴가·�
 const FB_SYNC = "ston_test/sync"; // 시트 짝짓기 기억 (한 번 고르면 다시 안 물어봄)
 
 /* ══════════════════════════════════════════════════════════════
-   구글 시트 연동
-   · 시트 → 앱 : 열 때 + 5분마다 + 새로고침 버튼
-   · 앱 → 시트 : 현장조사일만 (다음 단계에서)
+   구글 시트 연동 — 시트가 주인, 앱은 읽기만
+   · 시트 → 앱 : 열 때 + 5분마다 + 창 복귀 시 + 새로고침 버튼
+   · 앱 → 시트 : 없음
+   · 시트가 주인: 착수일·현장조사(첫날)·완수일·계약일·특이사항·지역·워크플로우 16단계
+   · 앱에만 있음: 조사 여러 날·날짜별 인원·예정/확정·납품일·메모·동별 점검종류
    ══════════════════════════════════════════════════════════════ */
 const SHEET_URL = "https://script.google.com/macros/s/AKfycbzePBMXZu0EkKrQIpwnUEuSrPCDsahNOgyfk6Cxl-RhIdyzOE1DuproN7U9JyWRXLc/exec";
 const SHEET_KEY = "ston2026";
@@ -11317,7 +11339,6 @@ function SafetyPanel({
     return out.sort((a, b) => (b.deletedAt || 0) - (a.deletedAt || 0));
   }, [db]);
   const restoreSite = s => {
-    if (typeof window.__stonUserEdited === "function") window.__stonUserEdited();
     setDb(prev => {
       const next = {
         ...prev
@@ -16504,33 +16525,7 @@ function App() {
     };
   }, [loadSheet, authUser]);
 
-  /* 앱 → 시트 : 현장조사일 보내기.
-     짝지어진 현장만, 값이 실제로 다를 때만 보낸다. */
-  const pushToSheet = React.useCallback(async list => {
-    if (!list || !list.length) return {
-      ok: false,
-      error: "보낼 내용이 없습니다"
-    };
-    try {
-      const res = await fetch(SHEET_URL, {
-        method: "POST",
-        body: JSON.stringify({
-          key: SHEET_KEY,
-          updates: list
-        })
-      });
-      const j = await res.json();
-      if (!j || !j.ok) throw new Error(j && j.error || "시트에 쓰지 못했습니다");
-      /* 쓰고 나면 곧바로 다시 읽어 화면을 맞춘다 */
-      setTimeout(loadSheet, 800);
-      return j;
-    } catch (e) {
-      return {
-        ok: false,
-        error: e && e.message || String(e)
-      };
-    }
-  }, [loadSheet]);
+
 
 
   /* 사람이 골라둔 짝짓기 기억 */
@@ -17066,83 +17061,10 @@ function App() {
       skipped
     };
   }, [sheet, allSchools, syncMap]);
-  /* 조사일이 시트와 다른 현장 — 방향을 가려낸다.
-     · 앱에서 고쳤다  → 시트로 보낼 것
-     · 시트에서 고쳤다 → 앱이 받을 것 (보내면 안 된다)
-     둘을 구분하려면 "직전에 본 시트 값"과 견줘야 한다. */
-  const seenSheet = useRef({}); // 현장별로 마지막에 본 시트 값
-  const [pending, setPending] = useState([]);
-  const [incoming, setIncoming] = useState([]);
-
-  /* ── 조사일 방향 판단 ──
-     앱과 시트의 조사일이 다를 때 어느 쪽이 새 값인지 가려낸다.
-       · 이번에 받은 시트에서 바뀐 행       → 시트가 새 값 → 받을 것
-       · 앱을 방금 열어 시트를 처음 받은 상태 → 시트를 원본으로 → 받을 것
-       · 그 외 (시트는 그대로인데 다름)      → 앱에서 고친 것 → 보낼 것
-     "직전 시트 값"은 시트를 새로 받을 때만 갱신한다. 앱 데이터가 바뀔 때 갱신하면
-     시트에서 고친 것이 앱에서 고친 것으로 뒤집히는 사고가 난다. */
-  const prevFieldByRow = useRef(null); /* 시트 행 → 직전 조사일 (처음엔 null) */
-  const changedRows = useRef({}); /* 이번 시트에서 조사일이 바뀐 행 */
-  const isFirstSheet = useRef(true); /* 앱 켜고 처음 받은 시트인지 */
-  const lastSeenAt = useRef(0);
-  useEffect(() => {
-    if (!sheet || !sheet.sites || !sheetAt || lastSeenAt.current === sheetAt) return;
-    lastSeenAt.current = sheetAt;
-    const cur = {};
-    sheet.sites.forEach(r => cur[r.row] = r.field || "");
-    if (prevFieldByRow.current === null) {
-      prevFieldByRow.current = cur;
-      isFirstSheet.current = true;
-      changedRows.current = {};
-      return;
-    }
-    const ch = {};
-    Object.entries(cur).forEach(([row, v]) => {
-      if (prevFieldByRow.current[row] !== v) ch[row] = true;
-    });
-    changedRows.current = ch;
-    prevFieldByRow.current = cur;
-    isFirstSheet.current = false;
-  }, [sheetAt]); // eslint-disable-line
-
-  useEffect(() => {
-    if (!sheetMatch) return;
-    const toSend = [],
-      toGet = [];
-    allSchools.forEach(s => {
-      const m = sheetMatch.map[s.id];
-      if (!m) return;
-      const appV = s.field || "";
-      const shV = m.row.field || "";
-      if (appV === shV) return;
-      const item = {
-        site: s,
-        row: m.row.row,
-        school: m.row.school,
-        region: m.row.region,
-        appV,
-        shV
-      };
-      if (changedRows.current[m.row.row] || isFirstSheet.current) toGet.push(item);else toSend.push(item);
-    });
-    setPending(toSend);
-    setIncoming(toGet);
-  }, [sheetMatch, allSchools, sheetAt]);
-
-  /* 앱에서 사람이 뭔가 저장하면(수정창에서 저장) 그때부터는 "첫 시트" 상태를 벗어난다.
-     그래야 앱에서 고친 조사일이 "보낼 것"으로 잡힌다. */
-  useEffect(() => {
-    window.__stonUserEdited = () => {
-      isFirstSheet.current = false;
-    };
-    return () => {
-      delete window.__stonUserEdited;
-    };
-  }, []);
 
   /* 시트가 주인인 항목은 시트 값을 앱에 자동으로 덮어쓴다.
-     착수일·완수일·계약일·특이사항·지역·워크플로우 16단계.
-     조사일은 앱이 주인이라 여기서 건드리지 않는다.
+     착수일·현장조사(첫날)·완수일·계약일·특이사항·지역·워크플로우 16단계.
+     조사 여러 날·날짜별 인원·예정/확정·메모는 앱에만 있으니 그대로 둔다.
 
      ★ 시트를 새로 받았을 때(sheetAt 이 바뀔 때)만 한 번 돈다.
        sheetMatch 나 allSchools 를 보고 돌면 덮어쓰기 → db 변경 → 다시 덮어쓰기로
@@ -17162,6 +17084,8 @@ function App() {
       const fl = flow[`${r.region}|${r.school}`];
       const next = {};
       if ((r.start || "") !== (s.start || "")) next.start = r.start || "";
+      /* 현장조사 첫날 — 시트가 주인. 여러 날(fieldEnd·fieldExtra)과 날짜별 인원은 앱에만 있으니 건드리지 않는다 */
+      if ((r.field || "") !== (s.field || "")) next.field = r.field || "";
       if ((r.end || "") !== (s.end || "")) next.end = r.end || "";
       if ((r.contract || "") !== (s.contract || "")) next.contract = r.contract || "";
       if ((r.memo || "") !== (s.memo || "")) next.memo = r.memo || "";
@@ -17207,27 +17131,13 @@ function App() {
     });
   }, [sheetAt]); // eslint-disable-line
 
-  /* 앱에서 현장을 지우면 시트의 조사일도 비운다.
-     현장은 시트에 남기되(착수·완수·FMS 등은 시트가 주인) 조사 일정만 취소됐음을 알린다. */
+  /* 시트와 짝지어진 현장인지 — 수정창에서 착수·조사·완수일을 잠글 때 쓴다 */
   useEffect(() => {
     window.__stonSheetLinked = siteId => !!(sheetMatch && sheetMatch.map[siteId]);
-    window.__stonClearSheetField = async siteId => {
-      if (!sheetMatch) return;
-      const m = sheetMatch.map[siteId];
-      if (!m || !m.row.field) return; /* 시트에 조사일이 없으면 할 일 없음 */
-      const r = await pushToSheet([{
-        row: m.row.row,
-        school: m.row.school,
-        region: m.row.region,
-        field: ""
-      }]);
-      if (!r.ok) console.warn("시트 조사일 비우기 실패:", r.error);
-    };
     return () => {
-      delete window.__stonClearSheetField;
       delete window.__stonSheetLinked;
     };
-  }, [sheetMatch, pushToSheet]);
+  }, [sheetMatch]);
 
   const urgent = allSchools.filter(s => {
     const d = calcDday(s.end);
@@ -17358,133 +17268,7 @@ function App() {
       color: C.t1,
       fontSize: 15
     }
-  }, incoming.length > 0 && /*#__PURE__*/React.createElement("div", {
-    style: {
-      position: "fixed",
-      left: 0,
-      right: 0,
-      bottom: (pending.length > 0 ? 52 : 0) + (sheetChanges.length > 0 ? 52 : 0),
-      zIndex: 9002,
-      background: C.blueL,
-      borderTop: `2px solid ${C.blue}`,
-      boxShadow: "0 -4px 20px rgba(0,0,0,.12)",
-      padding: "10px 14px",
-      display: "flex",
-      alignItems: "center",
-      gap: 10,
-      flexWrap: "wrap"
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 16
-    }
-  }, "📥"), /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 14,
-      fontWeight: 800,
-      color: C.blue
-    }
-  }, "시트에서 고친 현장조사일 ", incoming.length, "건이 앱과 다릅니다"), /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 12,
-      color: C.t3,
-      flex: 1,
-      minWidth: 150
-    }
-  }, incoming.slice(0, 3).map(p => `${p.school} ${p.appV || "(없음)"}→${p.shV || "(없음)"}`).join(" · "), incoming.length > 3 ? ` 외 ${incoming.length - 3}건` : ""), /*#__PURE__*/React.createElement("button", {
-    onClick: () => {
-      if (!window.confirm(`시트 값을 앱으로 가져옵니다. ${incoming.length}건\n\n` + incoming.slice(0, 10).map(p => `· ${p.school}  ${p.appV || "(없음)"} → ${p.shV || "(없음)"}`).join("\n") + (incoming.length > 10 ? `\n… 외 ${incoming.length - 10}건` : ""))) return;
-      setDb(prev => {
-        const next = {
-          ...prev
-        };
-        incoming.forEach(p => {
-          const s2 = p.site;
-          if (!s2._year || !s2._half) return;
-          next[s2._year] = {
-            ...(next[s2._year] || {})
-          };
-          next[s2._year][s2._half] = (next[s2._year][s2._half] || prev[s2._year]?.[s2._half] || []).map(x => x.id === s2.id ? stampEdit({
-            ...x,
-            field: p.shV
-          }, "시트에서 조사일 받음") : x);
-        });
-        return next;
-      });
-      setIncoming([]);
-    },
-    style: {
-      padding: "8px 16px",
-      borderRadius: 8,
-      border: "none",
-      background: C.blue,
-      color: "#fff",
-      fontSize: 13,
-      fontWeight: 800,
-      cursor: "pointer",
-      whiteSpace: "nowrap"
-    }
-  }, "앱으로 가져오기")), pending.length > 0 && /*#__PURE__*/React.createElement("div", {
-    style: {
-      position: "fixed",
-      left: 0,
-      right: 0,
-      bottom: sheetChanges.length > 0 ? 52 : 0,
-      zIndex: 9001,
-      background: C.orangeL,
-      borderTop: `2px solid ${C.orange}`,
-      boxShadow: "0 -4px 20px rgba(0,0,0,.12)",
-      padding: "10px 14px",
-      display: "flex",
-      alignItems: "center",
-      gap: 10,
-      flexWrap: "wrap"
-    }
-  }, /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 16
-    }
-  }, "📤"), /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 14,
-      fontWeight: 800,
-      color: C.orange
-    }
-  }, "앱에서 고친 현장조사일 ", pending.length, "건이 시트와 다릅니다"), /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 12,
-      color: C.t3,
-      flex: 1,
-      minWidth: 150
-    }
-  }, pending.slice(0, 3).map(p => `${p.school} ${p.shV || "(없음)"}→${p.appV || "(없음)"}`).join(" · "), pending.length > 3 ? ` 외 ${pending.length - 3}건` : ""), /*#__PURE__*/React.createElement("button", {
-    onClick: async () => {
-      if (!window.confirm(`현장조사일 ${pending.length}건을 시트에 보냅니다.\n\n` + pending.slice(0, 10).map(p => `· ${p.school}  ${p.shV || "(없음)"} → ${p.appV || "(없음)"}`).join("\n") + (pending.length > 10 ? `\n… 외 ${pending.length - 10}건` : ""))) return;
-      const r = await pushToSheet(pending.map(p => ({
-        row: p.row,
-        school: p.school,
-        region: p.region,
-        field: p.appV
-      })));
-      if (!r.ok) {
-        window.alert("보내지 못했습니다 — " + r.error);
-        return;
-      }
-      const bad = (r.results || []).filter(x => !x.ok);
-      window.alert(bad.length ? `${(r.results || []).length - bad.length}건 보냈습니다.\n실패 ${bad.length}건:\n` + bad.map(x => `· ${x.row}행 — ${x.error}`).join("\n") : `${(r.results || []).length}건을 시트에 보냈습니다.`);
-    },
-    style: {
-      padding: "8px 16px",
-      borderRadius: 8,
-      border: "none",
-      background: C.orange,
-      color: "#fff",
-      fontSize: 13,
-      fontWeight: 800,
-      cursor: "pointer",
-      whiteSpace: "nowrap"
-    }
-  }, "시트로 보내기")), sheetChanges.length > 0 && /*#__PURE__*/React.createElement("div", {
+  }, sheetChanges.length > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       position: "fixed",
       left: 0,
