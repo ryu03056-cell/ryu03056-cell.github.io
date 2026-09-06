@@ -6689,6 +6689,8 @@ function EditPanel({
       return;
     }
     setNameErr("");
+    /* 사람이 앱에서 저장했음을 알린다 — 조사일 방향 판단에 쓰인다 */
+    if (typeof window.__stonUserEdited === "function") window.__stonUserEdited();
     const beforeStr = `${(sc.assignees || []).join(",") || "-"} · 진행 ${STEPS.filter(k => sc.progress && sc.progress[k]).length}/${STEPS.length}`;
     const afterStr = `${f.assignees.join(",") || "-"} · 진행 ${STEPS.filter(k => prog[k]).length}/${STEPS.length}`;
     setDb(prev => {
@@ -8474,6 +8476,7 @@ function SitesManager({
       }, `${lbl} 변경`));
       return n;
     });
+    if (typeof window.__stonUserEdited === "function") window.__stonUserEdited();
     logAction("수정", `${sc?.school} · ${lbl}`, sc?.[field] || "-", v || "-");
     showToast("날짜 변경됨 · 캘린더 자동 반영");
   };
@@ -11314,6 +11317,7 @@ function SafetyPanel({
     return out.sort((a, b) => (b.deletedAt || 0) - (a.deletedAt || 0));
   }, [db]);
   const restoreSite = s => {
+    if (typeof window.__stonUserEdited === "function") window.__stonUserEdited();
     setDb(prev => {
       const next = {
         ...prev
@@ -17070,6 +17074,37 @@ function App() {
   const [pending, setPending] = useState([]);
   const [incoming, setIncoming] = useState([]);
 
+  /* ── 조사일 방향 판단 ──
+     앱과 시트의 조사일이 다를 때 어느 쪽이 새 값인지 가려낸다.
+       · 이번에 받은 시트에서 바뀐 행       → 시트가 새 값 → 받을 것
+       · 앱을 방금 열어 시트를 처음 받은 상태 → 시트를 원본으로 → 받을 것
+       · 그 외 (시트는 그대로인데 다름)      → 앱에서 고친 것 → 보낼 것
+     "직전 시트 값"은 시트를 새로 받을 때만 갱신한다. 앱 데이터가 바뀔 때 갱신하면
+     시트에서 고친 것이 앱에서 고친 것으로 뒤집히는 사고가 난다. */
+  const prevFieldByRow = useRef(null); /* 시트 행 → 직전 조사일 (처음엔 null) */
+  const changedRows = useRef({}); /* 이번 시트에서 조사일이 바뀐 행 */
+  const isFirstSheet = useRef(true); /* 앱 켜고 처음 받은 시트인지 */
+  const lastSeenAt = useRef(0);
+  useEffect(() => {
+    if (!sheet || !sheet.sites || !sheetAt || lastSeenAt.current === sheetAt) return;
+    lastSeenAt.current = sheetAt;
+    const cur = {};
+    sheet.sites.forEach(r => cur[r.row] = r.field || "");
+    if (prevFieldByRow.current === null) {
+      prevFieldByRow.current = cur;
+      isFirstSheet.current = true;
+      changedRows.current = {};
+      return;
+    }
+    const ch = {};
+    Object.entries(cur).forEach(([row, v]) => {
+      if (prevFieldByRow.current[row] !== v) ch[row] = true;
+    });
+    changedRows.current = ch;
+    prevFieldByRow.current = cur;
+    isFirstSheet.current = false;
+  }, [sheetAt]); // eslint-disable-line
+
   useEffect(() => {
     if (!sheetMatch) return;
     const toSend = [],
@@ -17079,50 +17114,31 @@ function App() {
       if (!m) return;
       const appV = s.field || "";
       const shV = m.row.field || "";
-      const lastSeen = seenSheet.current[s.id];
-
-      if (appV === shV) {
-        seenSheet.current[s.id] = shV;
-        return;
-      }
-      if (lastSeen === undefined) {
-        /* 처음 보는 현장 — 어느 쪽이 새 값인지 알 수 없다.
-           시트를 원본으로 삼고 기록만 해둔다 (보내지 않는다) */
-        seenSheet.current[s.id] = shV;
-        if (appV !== shV) toGet.push({
-          site: s,
-          row: m.row.row,
-          school: m.row.school,
-          appV,
-          shV
-        });
-        return;
-      }
-      if (shV !== lastSeen) {
-        /* 시트가 바뀌었다 → 받을 것 */
-        seenSheet.current[s.id] = shV;
-        toGet.push({
-          site: s,
-          row: m.row.row,
-          school: m.row.school,
-          appV,
-          shV
-        });
-      } else {
-        /* 시트는 그대로인데 다르다 → 앱에서 고친 것 → 보낼 것 */
-        toSend.push({
-          site: s,
-          row: m.row.row,
-          school: m.row.school,
-          region: m.row.region,
-          appV,
-          shV
-        });
-      }
+      if (appV === shV) return;
+      const item = {
+        site: s,
+        row: m.row.row,
+        school: m.row.school,
+        region: m.row.region,
+        appV,
+        shV
+      };
+      if (changedRows.current[m.row.row] || isFirstSheet.current) toGet.push(item);else toSend.push(item);
     });
     setPending(toSend);
     setIncoming(toGet);
-  }, [sheetMatch, allSchools]);
+  }, [sheetMatch, allSchools, sheetAt]);
+
+  /* 앱에서 사람이 뭔가 저장하면(수정창에서 저장) 그때부터는 "첫 시트" 상태를 벗어난다.
+     그래야 앱에서 고친 조사일이 "보낼 것"으로 잡힌다. */
+  useEffect(() => {
+    window.__stonUserEdited = () => {
+      isFirstSheet.current = false;
+    };
+    return () => {
+      delete window.__stonUserEdited;
+    };
+  }, []);
 
   /* 시트가 주인인 항목은 시트 값을 앱에 자동으로 덮어쓴다.
      착수일·완수일·계약일·특이사항·지역·워크플로우 16단계.
