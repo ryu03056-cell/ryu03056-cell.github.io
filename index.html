@@ -17125,12 +17125,20 @@ function App() {
   }, [sheetMatch, allSchools]);
 
   /* 시트가 주인인 항목은 시트 값을 앱에 자동으로 덮어쓴다.
-     착수일·완수일·계약일·특이사항·점검종류·지역·워크플로우 16단계.
-     조사일은 앱이 주인이라 여기서 건드리지 않는다. */
+     착수일·완수일·계약일·특이사항·지역·워크플로우 16단계.
+     조사일은 앱이 주인이라 여기서 건드리지 않는다.
+
+     ★ 시트를 새로 받았을 때(sheetAt 이 바뀔 때)만 한 번 돈다.
+       sheetMatch 나 allSchools 를 보고 돌면 덮어쓰기 → db 변경 → 다시 덮어쓰기로
+       무한 반복하므로 절대 그 둘을 의존성에 넣지 않는다. */
+  const appliedAt = useRef(0);
   useEffect(() => {
-    if (!sheetMatch || !sheet) return;
+    if (!sheet || !sheetMatch || !sheetAt) return;
+    if (appliedAt.current === sheetAt) return; /* 이 시트로 이미 반영했음 */
+    appliedAt.current = sheetAt;
+
     const flow = sheet.flow || {};
-    const patch = {}; /* id → 바꿀 값 */
+    const patch = {};
     allSchools.forEach(s => {
       const m = sheetMatch.map[s.id];
       if (!m) return;
@@ -17142,12 +17150,17 @@ function App() {
       if ((r.contract || "") !== (s.contract || "")) next.contract = r.contract || "";
       if ((r.memo || "") !== (s.memo || "")) next.memo = r.memo || "";
       if (r.region && r.region !== (s.region || "")) next.region = r.region;
-      /* 워크플로우 16단계 — 시트 값 그대로 보관 */
+      /* 워크플로우 — 값이 실제로 다를 때만 (키 순서 무관하게 견줌) */
       const fs = fl ? fl.steps || {} : null;
-      if (fs && JSON.stringify(fs) !== JSON.stringify(s.flow || {})) next.flow = fs;
+      if (fs) {
+        const a = JSON.stringify(Object.keys(fs).sort().map(k => [k, fs[k]]));
+        const b = JSON.stringify(Object.keys(s.flow || {}).sort().map(k => [k, (s.flow || {})[k]]));
+        if (a !== b) next.flow = fs;
+      }
       if (Object.keys(next).length) patch[s.id] = next;
     });
     if (!Object.keys(patch).length) return;
+
     setDb(prev => {
       const out = {
         ...prev
@@ -17176,7 +17189,7 @@ function App() {
       });
       return changed ? out : prev;
     });
-  }, [sheet, sheetMatch]); // eslint-disable-line
+  }, [sheetAt]); // eslint-disable-line
 
   /* 앱에서 현장을 지우면 시트의 조사일도 비운다.
      현장은 시트에 남기되(착수·완수·FMS 등은 시트가 주인) 조사 일정만 취소됐음을 알린다. */
