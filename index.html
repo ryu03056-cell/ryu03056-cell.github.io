@@ -6893,7 +6893,8 @@ function EditPanel({
       ...p,
       school: v
     })),
-    placeholder: "예: 김포양곡중학교"
+    placeholder: "예: 김포양곡중학교",
+    locked: sheetLinked
   })), /*#__PURE__*/React.createElement("div", {
     style: {
       gridColumn: "span 2"
@@ -6907,7 +6908,8 @@ function EditPanel({
     })),
     list: "region-list",
     placeholder: "예: 김포 · 남양주 · 수원",
-    hint: "지도에서 현장 위치를 잡을 때 쓰입니다"
+    hint: "지도에서 현장 위치를 잡을 때 쓰입니다",
+    locked: sheetLinked
   }), /*#__PURE__*/React.createElement("datalist", {
     id: "region-list"
   }, Object.keys(REGION_XY).map(r => /*#__PURE__*/React.createElement("option", {
@@ -6923,7 +6925,8 @@ function EditPanel({
     on: v => setF(p => ({
       ...p,
       no: v
-    }))
+    })),
+    locked: sheetLinked
   })), /*#__PURE__*/React.createElement("div", {
     style: {
       gridColumn: "span 2",
@@ -6937,12 +6940,23 @@ function EditPanel({
       color: C.t3,
       fontWeight: 700
     }
-  }, "구분"), /*#__PURE__*/React.createElement("button", {
-    onClick: () => setF(p => ({
+  }, "구분", sheetLinked && /*#__PURE__*/React.createElement("span", {
+    style: {
+      marginLeft: 6,
+      fontSize: 10,
+      color: C.t4,
+      fontWeight: 600
+    }
+  }, "🔒 시트 A열에서 관리")), /*#__PURE__*/React.createElement("button", {
+    onClick: () => !sheetLinked && setF(p => ({
       ...p,
       isNew: !p.isNew
     })),
+    disabled: sheetLinked,
+    title: sheetLinked ? "시트 A열에 '신규' 가 있으면 신규 현장입니다" : undefined,
     style: {
+      opacity: sheetLinked ? .6 : 1,
+      cursor: sheetLinked ? "not-allowed" : "pointer",
       alignSelf: "flex-start",
       padding: "9px 15px",
       borderRadius: 8,
@@ -7062,6 +7076,8 @@ function EditPanel({
     }
   }, "점검종류"), /*#__PURE__*/React.createElement("select", {
     value: f.kind,
+    disabled: sheetLinked,
+    title: sheetLinked ? "시트에서 관리" : undefined,
     onChange: e => setF(p => ({
       ...p,
       kind: e.target.value
@@ -7206,7 +7222,8 @@ function EditPanel({
     })),
     type: "date",
     col: C.purple,
-    hint: deliverLate(f) ? `⚠ 완수일 ${DELIVER_LEAD}일 전까지 권장` : null
+    hint: deliverLate(f) ? `⚠ 완수일 ${DELIVER_LEAD}일 전까지 권장` : null,
+    locked: sheetLinked
   }), /*#__PURE__*/React.createElement(LI, {
     label: "● 완수일",
     val: f.end,
@@ -7656,10 +7673,11 @@ function EditPanel({
     const on = (b.kind || "정기") === bk.v;
     return /*#__PURE__*/React.createElement("button", {
       key: bk.v,
-      onClick: () => setBf(p => p.map((x, i) => i !== bi ? x : {
+      onClick: () => !sheetLinked && setBf(p => p.map((x, i) => i !== bi ? x : {
         ...x,
         kind: bk.v
       })),
+      disabled: sheetLinked,
       style: {
         flex: "1 1 auto",
         minWidth: 60,
@@ -7680,14 +7698,16 @@ function EditPanel({
     on: v => setBf(p => p.map((x, i) => i !== bi ? x : {
       ...x,
       b: v
-    }))
+    })),
+    locked: sheetLinked
   }), /*#__PURE__*/React.createElement(LI, {
     label: "층수",
     val: b.floor,
     on: v => setBf(p => p.map((x, i) => i !== bi ? x : {
       ...x,
       floor: v
-    }))
+    })),
+    locked: sheetLinked
   }), /*#__PURE__*/React.createElement(LI, {
     label: "연면적㎡",
     val: b.area,
@@ -7695,7 +7715,8 @@ function EditPanel({
       ...x,
       area: v
     })),
-    type: "number"
+    type: "number",
+    locked: sheetLinked
   })), /*#__PURE__*/React.createElement("div", {
     style: {
       marginBottom: 8
@@ -7710,7 +7731,9 @@ function EditPanel({
     }
   }, "FMS 계정 (아이디 // 비밀번호)"), /*#__PURE__*/React.createElement("input", {
     value: b.fms,
-    onChange: e => setBf(p => p.map((x, i) => i !== bi ? x : {
+    disabled: sheetLinked,
+    title: sheetLinked ? "시트에서 관리" : undefined,
+    onChange: e => !sheetLinked && setBf(p => p.map((x, i) => i !== bi ? x : {
       ...x,
       fms: e.target.value
     })),
@@ -7718,7 +7741,7 @@ function EditPanel({
     style: {
       width: "100%",
       padding: "7px 9px",
-      background: C.surfaceL,
+      background: sheetLinked ? C.bg : C.surfaceL,
       border: BD,
       borderRadius: 6,
       color: C.blue,
@@ -7755,7 +7778,7 @@ function EditPanel({
       lineHeight: 1.5
     }
   })))), /*#__PURE__*/React.createElement("button", {
-    onClick: () => setBf(p => [...p, {
+    onClick: () => sheetLinked ? showToast("동은 스프레드시트의 시설물 행에서 추가합니다") : setBf(p => [...p, {
       b: "",
       cat: "건축",
       kind: kindToBK(sc.kind),
@@ -7795,8 +7818,8 @@ function EditPanel({
       gap: 8
     }
   }, !isNew && /*#__PURE__*/React.createElement("button", {
-    onClick: () => setConfirmDel(true),
-    title: "현장 삭제",
+    onClick: () => sheetLinked ? window.alert("이 현장은 스프레드시트에서 관리됩니다.\n지우려면 시트에서 행을 지우세요. 앱에서는 지울 수 없습니다.") : setConfirmDel(true),
+    title: sheetLinked ? "시트에서 관리 — 앱에서 지울 수 없음" : "현장 삭제",
     style: {
       flexShrink: 0,
       padding: "11px 14px",
@@ -10943,6 +10966,7 @@ function siteFromSheetRow(r, flowSteps, yr, half) {
     start: r.start || "",
     field: r.field || "",
     end: r.end || "",
+    deliverDate: r.deliver || "",
     headcount: 1,
     assignees: [],
     /* 신규 여부는 시트 A열의 "신규" 로 정한다 */
@@ -16490,7 +16514,7 @@ function App() {
     if (!before || !before.sites) return [];
     const oldMap = {};
     before.sites.forEach(r => oldMap[r.row] = r);
-    const FIELDS = [["field", "현장조사일"], ["start", "착수일"], ["end", "완수일"], ["contract", "계약일"], ["kind", "점검종류"], ["region", "지역"], ["school", "학교명"], ["memo", "특이사항"], ["fmsId", "FMS ID"], ["deliverY", "납품유무"], ["deliverW", "납품방법"], ["doneY", "완수유무"]];
+    const FIELDS = [["field", "현장조사일"], ["start", "착수일"], ["end", "완수일"], ["deliver", "납품일"], ["contract", "계약일"], ["kind", "점검종류"], ["region", "지역"], ["school", "학교명"], ["memo", "특이사항"], ["fmsId", "FMS ID"], ["deliverY", "납품유무"], ["deliverW", "납품방법"], ["doneY", "완수유무"]];
     const out = [];
     after.sites.forEach(r => {
       const o = oldMap[r.row];
@@ -17156,9 +17180,46 @@ function App() {
         /* 날짜별 인원에서 옛 첫날 배정은 그대로 두되, 새 첫날에 배정이 없으면 기본 인원이 쓰인다 (whoOnDate) */
       }
       if ((r.end || "") !== (s.end || "")) next.end = r.end || "";
+      if ((r.deliver || "") !== (s.deliverDate || "")) next.deliverDate = r.deliver || "";
       if ((r.contract || "") !== (s.contract || "")) next.contract = r.contract || "";
       if ((r.memo || "") !== (s.memo || "")) next.memo = r.memo || "";
       if (r.region && r.region !== (s.region || "")) next.region = r.region;
+      if (r.school && r.school !== (s.school || "")) next.school = r.school;
+      if ((r.no || "") !== (s.no || "")) next.no = r.no || "";
+      if (!!r.isNew !== !!s.isNew) next.isNew = !!r.isNew;
+      /* 동 정보 — 시트 시설물 행 기준. 앱에서만 쓰는 값(rep·fmsD·delivery·note·flag)은 이름으로 짝지어 보존 */
+      if (r.buildings && r.buildings.length) {
+        const kindOf = k => {
+          const t = String(k || "");
+          for (const bk of BKINDS) if (t.includes(bk.v)) return bk.v;
+          return "정기";
+        };
+        const oldB = toArr(s.buildings).filter(Boolean);
+        const byName = {};
+        oldB.forEach(b => byName[normName(b.b)] = b);
+        const nb = r.buildings.map(b => {
+          const prev = byName[normName(b.b)] || {};
+          return {
+            ...prev,
+            b: b.b || "",
+            cat: prev.cat || (/옹벽|교량|터널|축대|담장/.test(b.b || "") ? "토목종" : "건축"),
+            kind: kindOf(b.kind || r.kind),
+            floor: b.floor || null,
+            area: b.area ?? null,
+            len: b.len ?? null,
+            height: b.height ?? null,
+            jong: b.jong || null,
+            fms: r.fmsId || prev.fms || null,
+            rep: prev.rep || false,
+            fmsD: prev.fmsD || false,
+            delivery: prev.delivery || null,
+            note: prev.note || null,
+            flag: prev.flag || null
+          };
+        });
+        const same = oldB.length === nb.length && oldB.every((b, i) => b.b === nb[i].b && b.kind === nb[i].kind && b.floor === nb[i].floor && b.area === nb[i].area && b.jong === nb[i].jong);
+        if (!same) next.buildings = nb;
+      }
       /* 워크플로우 — 값이 실제로 다를 때만 (키 순서 무관하게 견줌) */
       const fs = fl ? fl.steps || {} : null;
       if (fs) {
