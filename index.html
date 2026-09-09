@@ -10956,7 +10956,7 @@ function siteFromSheetRow(r, flowSteps, yr, half) {
     delivery: null
   }));
   return {
-    id: newId(),
+    id: `sheet-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
     school: r.school || "",
     no: r.no || "",
     region: r.region || "",
