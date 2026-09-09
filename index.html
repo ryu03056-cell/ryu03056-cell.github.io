@@ -17265,15 +17265,7 @@ function App() {
         ...prev
       };
       let changed = false;
-      /* 새 현장 붙이기 */
-      if (toCreate.length) {
-        out[SHEET_YEAR] = {
-          ...(out[SHEET_YEAR] || {})
-        };
-        const cur = toArr(out[SHEET_YEAR][SHEET_HALF]);
-        out[SHEET_YEAR][SHEET_HALF] = [...cur, ...toCreate];
-        changed = true;
-      }
+      /* ① 기존 현장에 시트 값 반영 — 먼저 한다 */
       Object.entries(prev).forEach(([yr, halves]) => {
         Object.entries(halves || {}).forEach(([half, list]) => {
           const arr = toArr(list);
@@ -17295,6 +17287,15 @@ function App() {
           }
         });
       });
+      /* ② 새 현장 붙이기 — ①이 끝난 뒤에. 앞에 하면 ①이 그 반기를 덮어써서 새 현장이 사라진다 */
+      if (toCreate.length) {
+        out[SHEET_YEAR] = {
+          ...(out[SHEET_YEAR] || {})
+        };
+        const cur = toArr(out[SHEET_YEAR][SHEET_HALF]);
+        out[SHEET_YEAR][SHEET_HALF] = [...cur, ...toCreate];
+        changed = true;
+      }
       return changed ? out : prev;
     });
   }, [sheet, sheetMatch]); // eslint-disable-line
