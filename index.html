@@ -17142,7 +17142,8 @@ function App() {
       total: rows.length,
       matched: Object.keys(map).length,
       target: target.length,
-      skipped
+      skipped,
+      at: sheet.at /* 어느 시트로 계산했는지 — 자동 반영이 새 시트인지 가릴 때 쓴다 */
     };
   }, [sheet, allSchools, syncMap]);
 
@@ -17153,11 +17154,13 @@ function App() {
      ★ 시트를 새로 받았을 때(sheetAt 이 바뀔 때)만 한 번 돈다.
        sheetMatch 나 allSchools 를 보고 돌면 덮어쓰기 → db 변경 → 다시 덮어쓰기로
        무한 반복하므로 절대 그 둘을 의존성에 넣지 않는다. */
-  const appliedAt = useRef(0);
+  const appliedAt = useRef(null);
   useEffect(() => {
-    if (!sheet || !sheetMatch || !sheetAt) return;
-    if (appliedAt.current === sheetAt) return; /* 이 시트로 이미 반영했음 */
-    appliedAt.current = sheetAt;
+    if (!sheet || !sheetMatch) return;
+    /* sheetMatch 가 아직 옛 시트로 계산된 상태면 기다린다 (useMemo 가 한 박자 늦게 온다) */
+    if (sheetMatch.at !== sheet.at) return;
+    if (appliedAt.current === sheet.at) return; /* 이 시트로 이미 반영했음 — 무한 반복 방지 */
+    appliedAt.current = sheet.at;
 
     const flow = sheet.flow || {};
     const patch = {};
@@ -17294,7 +17297,7 @@ function App() {
       });
       return changed ? out : prev;
     });
-  }, [sheetAt]); // eslint-disable-line
+  }, [sheet, sheetMatch]); // eslint-disable-line
 
   /* 시트와 짝지어진 현장인지 — 수정창에서 착수·조사·완수일을 잠글 때 쓴다 */
   useEffect(() => {
