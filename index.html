@@ -7091,7 +7091,7 @@ function EditPanel({
       fontSize: 13,
       outline: "none"
     }
-  }, ["정기점검", "정밀점검", "내진성능", "구조감리", "내진보강설계", "구조검토"].map(k => /*#__PURE__*/React.createElement("option", {
+  }, [...new Set([...["정기점검", "정밀점검", "내진성능", "구조감리", "내진보강설계", "구조검토"], ...(f.kind ? [f.kind] : [])])].map(k => /*#__PURE__*/React.createElement("option", {
     key: k
   }, k)))), /*#__PURE__*/React.createElement(LI, {
     label: "▶ 착수일",
@@ -7316,14 +7316,14 @@ function EditPanel({
       color: C.t4,
       fontWeight: 600
     }
-  }, "🔒 시트에서 관리")), sheetLinked && sc.flow ? /*#__PURE__*/React.createElement("div", {
+  }, "🔒 시트에서 관리")), sheetLinked ? /*#__PURE__*/React.createElement("div", {
     style: {
       marginLeft: "auto",
       fontSize: 14,
       fontWeight: 800,
-      color: flowProgress(sc.flow).done === 16 ? C.green : tc.a
+      color: flowProgress(sc.flow || {}).done === 16 ? C.green : tc.a
     }
-  }, flowProgress(sc.flow).done, "/16") : /*#__PURE__*/React.createElement("div", {
+  }, flowProgress(sc.flow || {}).done, "/16") : /*#__PURE__*/React.createElement("div", {
     style: {
       marginLeft: "auto",
       fontSize: 14,
@@ -7337,12 +7337,12 @@ function EditPanel({
       marginLeft: 4,
       fontWeight: 600
     }
-  }, Math.round(progDone / STEPS.length * 100), "%"))), /*#__PURE__*/sheetLinked && sc.flow ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+  }, Math.round(progDone / STEPS.length * 100), "%"))), /*#__PURE__*/sheetLinked ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     style: {
       marginBottom: 12
     }
   }, /*#__PURE__*/React.createElement(Flow16Bar, {
-    flow: sc.flow
+    flow: sc.flow || {}
   })), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "grid",
@@ -7365,8 +7365,8 @@ function EditPanel({
       marginBottom: 6
     }
   }, grp), keys.map(k => {
-    const on = flowDone(sc.flow[k]);
-    const v = sc.flow[k];
+    const on = flowDone((sc.flow || {})[k]);
+    const v = (sc.flow || {})[k];
     const isDate = typeof v === "string" && /\d{4}/.test(v);
     return /*#__PURE__*/React.createElement("div", {
       key: k,
@@ -9220,8 +9220,8 @@ function SitesManager({
         paddingLeft: 19
       },
       onClick: e => e.stopPropagation()
-    }, /*#__PURE__*/(s.flow ? /*#__PURE__*/React.createElement(Flow16Bar, {
-      flow: s.flow,
+    }, /*#__PURE__*/(s.flow || s.fromSheet ? /*#__PURE__*/React.createElement(Flow16Bar, {
+      flow: s.flow || {},
       compact: true
     }) : /*#__PURE__*/React.createElement(StepBar, {
       progress: s.progress,
@@ -9467,8 +9467,8 @@ function SitesManager({
         paddingLeft: 19
       },
       onClick: e => e.stopPropagation()
-    }, /*#__PURE__*/(s.flow ? /*#__PURE__*/React.createElement(Flow16Bar, {
-      flow: s.flow,
+    }, /*#__PURE__*/(s.flow || s.fromSheet ? /*#__PURE__*/React.createElement(Flow16Bar, {
+      flow: s.flow || {},
       compact: true
     }) : /*#__PURE__*/React.createElement(StepBar, {
       progress: s.progress,
@@ -10960,7 +10960,7 @@ function siteFromSheetRow(r, flowSteps, yr, half) {
     school: r.school || "",
     no: r.no || "",
     region: r.region || "",
-    kind: kindOf(r.kind) === "정기" ? "정기점검" : `${kindOf(r.kind)}점검`,
+    kind: r.kind || "정기점검", /* 시트 F열 값 그대로 (시트가 주인) */
     memo: r.memo || "",
     contract: r.contract || "",
     start: r.start || "",
@@ -11008,11 +11008,23 @@ function matchSheetRow(site, rows, saved) {
     };
   }
   let c = rows.filter(r => normName(r.school) === normName(site.school) && (!site.region || !r.region || String(r.region).trim() === String(site.region).trim()));
-  if (!c.length) return {
-    row: null,
-    by: "시트에 없음",
-    cands: []
-  };
+  if (!c.length) {
+    /* 이름으로 못 찾음 — 시트에서 학교명이 바뀐 경우일 수 있다.
+       No. 가 있고 시트에서 그 No. 가 하나뿐이면 그걸로 잇는다 (이름이 바뀌어도 같은 현장) */
+    const no = String(site.no || "").trim();
+    if (no) {
+      const byNo = rows.filter(r => String(r.no || "").trim() === no);
+      if (byNo.length === 1) return {
+        row: byNo[0],
+        by: "No.로 연결 (이름 바뀜)"
+      };
+    }
+    return {
+      row: null,
+      by: "시트에 없음",
+      cands: []
+    };
+  }
   if (c.length === 1) return {
     row: c[0],
     by: "지역+학교명"
@@ -17189,6 +17201,7 @@ function App() {
       if (r.region && r.region !== (s.region || "")) next.region = r.region;
       if (r.school && r.school !== (s.school || "")) next.school = r.school;
       if ((r.no || "") !== (s.no || "")) next.no = r.no || "";
+      if (r.kind && r.kind !== (s.kind || "")) next.kind = r.kind;
       if (!!r.isNew !== !!s.isNew) next.isNew = !!r.isNew;
       /* 동 정보 — 시트 시설물 행 기준. 앱에서만 쓰는 값(rep·fmsD·delivery·note·flag)은 이름으로 짝지어 보존 */
       if (r.buildings && r.buildings.length) {
@@ -17224,11 +17237,11 @@ function App() {
         if (!same) next.buildings = nb;
       }
       /* 워크플로우 — 값이 실제로 다를 때만 (키 순서 무관하게 견줌) */
-      const fs = fl ? fl.steps || {} : null;
-      if (fs) {
+      const fs = fl ? fl.steps || {} : {}; /* 워크플로우에 없어도 {} — 시트 연동 현장은 16단계로 보인다 */
+      {
         const a = JSON.stringify(Object.keys(fs).sort().map(k => [k, fs[k]]));
         const b = JSON.stringify(Object.keys(s.flow || {}).sort().map(k => [k, (s.flow || {})[k]]));
-        if (a !== b) next.flow = fs;
+        if (a !== b || !s.flow) next.flow = fs;
       }
       if (Object.keys(next).length) patch[s.id] = next;
     });
@@ -17237,15 +17250,18 @@ function App() {
        · 앱에 이름이 비슷한 현장(휴지통 포함)이 있으면 만들지 않는다 → 사람이 설정에서 연결
        · "앱 전용" 으로 지정된 것도 건너뛴다 */
     const takenRows = new Set(Object.values(sheetMatch.map).map(m => String(m.row.row)));
-    const allNames = new Set();
+    const allNames = new Set(),
+      allNos = new Set();
     Object.values(db).forEach(hs => Object.values(hs || {}).forEach(list => toArr(list).forEach(x => {
       if (x && x.school) allNames.add(normName(x.school));
+      if (x && x.no) allNos.add(String(x.no).trim());
     })));
     const toCreate = [];
     sheet.sites.forEach(r => {
       if (takenRows.has(String(r.row))) return;
       if (!r.school) return;
       if (allNames.has(normName(r.school))) return; /* 이름이 비슷한 게 있다 → 사람이 연결 */
+      if (r.no && allNos.has(String(r.no).trim())) return; /* 같은 No. 가 앱에 있다 → 이름만 바뀐 것, 만들지 않음 */
       const fl = flow[`${r.region}|${r.school}`];
       toCreate.push(siteFromSheetRow(r, fl ? fl.steps : null, SHEET_YEAR, SHEET_HALF));
     });
